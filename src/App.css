@@ -558,10 +558,8 @@ h2 {
 
 .team-results-header {
   font-size: clamp(1.1rem, 2.5vw, 1.3rem);
-  margin-bottom: clamp(12px, 2vw, 16px);
+  margin: 0;
   font-weight: 700;
-  padding-bottom: clamp(8px, 1.5vw, 12px);
-  border-bottom: 2px solid var(--border-color);
   transition: border-color 0.3s ease;
 }
 
@@ -586,11 +584,12 @@ h2 {
 
 .sport-results-header {
   font-size: clamp(1rem, 2vw, 1.1rem);
-  margin-bottom: clamp(8px, 1.5vw, 12px);
+  margin: 0;
   font-weight: 600;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   transition: color 0.3s ease;
 }
@@ -610,6 +609,83 @@ h2 {
   }
   50% {
     opacity: 0.3;
+  }
+}
+
+/* Grid Layout for Side-by-Side Teams */
+.results-grid-container {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2.5vw, 24px);
+  margin-top: clamp(16px, 2.5vw, 24px);
+}
+
+.results-grid-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(12px, 2vw, 20px);
+  width: 100%;
+}
+
+.team-headers-row {
+  margin-bottom: clamp(8px, 1.5vw, 12px);
+}
+
+.team-header-column {
+  text-align: center;
+  padding: clamp(12px, 2vw, 16px);
+  border-radius: clamp(8px, 1.5vw, 12px);
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.sport-headers-row {
+  margin-bottom: clamp(8px, 1.5vw, 12px);
+}
+
+.sport-header-column {
+  text-align: center;
+  padding: clamp(8px, 1.5vw, 12px);
+  border-radius: clamp(6px, 1.2vw, 10px);
+  background: rgba(182, 203, 47, 0.1);
+  border-left: 3px solid var(--accent-color);
+}
+
+.players-row {
+  align-items: start;
+  margin-bottom: clamp(16px, 2.5vw, 24px);
+}
+
+.players-column {
+  min-height: 100px;
+  padding: clamp(8px, 1.5vw, 12px);
+  border-radius: clamp(6px, 1.2vw, 10px);
+  background: rgba(182, 203, 47, 0.05);
+  border: 1px solid var(--border-color);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.sport-row-container {
+  margin-bottom: clamp(20px, 3vw, 32px);
+}
+
+/* Responsive adjustments for grid */
+@media (max-width: 1024px) {
+  .results-grid-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .results-grid-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .team-header-column,
+  .sport-header-column,
+  .players-column {
+    margin-bottom: clamp(8px, 1.5vw, 12px);
   }
 }
 

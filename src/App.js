@@ -196,45 +196,51 @@ function App() {
       // Play start animation sound
       playSound(600, 0.2, 'sine', 0.5);
       
-      // Distribute total players across all teams and all sports randomly without duplicates
+      // Distribute ALL 500 players across all teams and all sports randomly without duplicates
       const totalPlayers = PLAYER_POOL.length; // 500 players
       const totalTeams = TEAM_CARDS.length; // 4 teams
       const totalSports = SPORTS_CONFIG.length; // 6 sports
-      const playersPerSportPerTeam = Math.floor(totalPlayers / (totalTeams * totalSports));
+      const totalSlots = totalTeams * totalSports; // 24 slots total
+      const basePlayersPerSlot = Math.floor(totalPlayers / totalSlots); // ~20 per slot
+      const remainder = totalPlayers % totalSlots; // Remaining players to distribute
       
       // Shuffle all players randomly
       const shuffled = [...PLAYER_POOL];
       shuffleArray(shuffled);
       
-      // Create a completely random distribution by shuffling player indices multiple times
-      const availablePlayers = [...shuffled];
-      shuffleArray(availablePlayers); // Extra shuffle for more randomness
-      
       const results = {};
       const revealed = {};
       let playerIndex = 0;
       
-      // Randomly distribute players across teams and sports
-      // Shuffle teams and sports order for more randomness
-      const shuffledTeams = [...TEAM_CARDS];
-      shuffleArray(shuffledTeams);
-      const shuffledSports = [...SPORTS_CONFIG];
-      shuffleArray(shuffledSports);
-      
-      shuffledTeams.forEach((team) => {
-        results[team.id] = {};
-        revealed[team.id] = {};
-        shuffledSports.forEach((sport) => {
-          const sportPlayers = [];
-          for (let i = 0; i < playersPerSportPerTeam && playerIndex < availablePlayers.length; i++) {
-            sportPlayers.push(availablePlayers[playerIndex]);
-            playerIndex++;
-          }
-          // Shuffle the players within each sport for more randomness
-          shuffleArray(sportPlayers);
-          results[team.id][sport.id] = sportPlayers;
-          revealed[team.id][sport.id] = 0; // Start with 0 revealed
+      // Create array of all team-sport combinations and shuffle for random distribution
+      const teamSportCombos = [];
+      TEAM_CARDS.forEach((team) => {
+        SPORTS_CONFIG.forEach((sport) => {
+          teamSportCombos.push({ teamId: team.id, sportId: sport.id });
         });
+      });
+      shuffleArray(teamSportCombos);
+      
+      // Distribute all 500 players randomly
+      teamSportCombos.forEach((combo, comboIndex) => {
+        // Add one extra player to first 'remainder' slots to use all 500 players
+        const playersForThisSlot = basePlayersPerSlot + (comboIndex < remainder ? 1 : 0);
+        
+        if (!results[combo.teamId]) {
+          results[combo.teamId] = {};
+          revealed[combo.teamId] = {};
+        }
+        
+        const sportPlayers = [];
+        for (let i = 0; i < playersForThisSlot && playerIndex < shuffled.length; i++) {
+          sportPlayers.push(shuffled[playerIndex]);
+          playerIndex++;
+        }
+        
+        // Shuffle players within this sport for more randomness
+        shuffleArray(sportPlayers);
+        results[combo.teamId][combo.sportId] = sportPlayers;
+        revealed[combo.teamId][combo.sportId] = 0; // Start with 0 revealed
       });
       
       setRaffleResults(results);
@@ -258,53 +264,84 @@ function App() {
     return () => clearInterval(interval);
   }, [isRaffling, shuffledPlayers.length]);
 
-  // Reveal players one by one after raffle completes
+  // Reveal players one by one SPORT BY SPORT in order after raffle completes
   useEffect(() => {
     const hasResults = Object.keys(raffleResults).length > 0;
     if (!hasResults || !hasStartedRaffle || isRaffling) {
       return undefined;
     }
     
-    // Find the next team/sport that needs to reveal a player
-    let nextTeamId = null;
-    let nextSportId = null;
+    // Find the current sport being revealed (in order: Cricket first, then next sport, etc.)
+    let currentSportId = null;
+    let allSportsComplete = true;
     
-    for (const team of TEAM_CARDS) {
-      const teamSports = raffleResults[team.id] || {};
-      const teamRevealed = revealedPlayers[team.id] || {};
+    // Check each sport in order to find which one is currently being revealed
+    for (const sport of SPORTS_CONFIG) {
+      const sportTeamsWithPlayers = [];
+      let sportHasUnrevealed = false;
       
-      for (const sport of SPORTS_CONFIG) {
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const teamRevealed = revealedPlayers[team.id] || {};
         const sportPlayers = teamSports[sport.id] || [];
         const revealedCount = teamRevealed[sport.id] || 0;
         
-        if (revealedCount < sportPlayers.length) {
-          nextTeamId = team.id;
-          nextSportId = sport.id;
-          break;
+        if (sportPlayers.length > 0) {
+          sportTeamsWithPlayers.push({ teamId: team.id, revealedCount, totalCount: sportPlayers.length });
+          if (revealedCount < sportPlayers.length) {
+            sportHasUnrevealed = true;
+            allSportsComplete = false;
+          }
         }
+      });
+      
+      // If this sport has unrevealed players, this is the current sport
+      if (sportHasUnrevealed) {
+        currentSportId = sport.id;
+        break;
       }
-      if (nextTeamId) break;
     }
     
-    if (!nextTeamId || !nextSportId) {
+    if (!currentSportId || allSportsComplete) {
       return undefined; // All players revealed
     }
     
+    // Find all teams that have unrevealed players for the current sport
+    const availableTeams = [];
+    TEAM_CARDS.forEach((team) => {
+      const teamSports = raffleResults[team.id] || {};
+      const teamRevealed = revealedPlayers[team.id] || {};
+      const sportPlayers = teamSports[currentSportId] || [];
+      const revealedCount = teamRevealed[currentSportId] || 0;
+      
+      if (revealedCount < sportPlayers.length) {
+        availableTeams.push({ teamId: team.id, revealedCount, totalCount: sportPlayers.length });
+      }
+    });
+    
+    if (availableTeams.length === 0) {
+      return undefined;
+    }
+    
+    // Randomly select which team to reveal next for the current sport
+    const randomIndex = Math.floor(Math.random() * availableTeams.length);
+    const { teamId: nextTeamId } = availableTeams[randomIndex];
+    
     // Play selection sound when revealing each player (every 5th player)
     const teamRevealed = revealedPlayers[nextTeamId] || {};
-    const currentCount = teamRevealed[nextSportId] || 0;
+    const currentCount = teamRevealed[currentSportId] || 0;
     if (currentCount % 5 === 0) {
       playSound(600, 0.1, 'sine', 0.3);
     }
     
     const revealTimer = setTimeout(() => {
       setRevealedPlayers((prev) => {
-        const newCount = (prev[nextTeamId]?.[nextSportId] || 0) + 1;
+        const newCount = (prev[nextTeamId]?.[currentSportId] || 0) + 1;
         return {
           ...prev,
           [nextTeamId]: {
             ...prev[nextTeamId],
-            [nextSportId]: newCount
+            [currentSportId]: newCount
           }
         };
       });
@@ -906,77 +943,116 @@ function App() {
               ) : (
                 <>
                   <h4 className="results-title">Raffle Results - All Teams & Sports</h4>
-                  {TEAM_CARDS.map((team) => {
-                    const teamSports = raffleResults[team.id] || {};
-                    const hasResults = Object.keys(teamSports).length > 0;
+                  <div className="results-grid-container">
+                    {/* Team Headers Row */}
+                    <div className="results-grid-row team-headers-row">
+                      {TEAM_CARDS.map((team) => {
+                        const teamSports = raffleResults[team.id] || {};
+                        const hasResults = Object.keys(teamSports).length > 0;
+                        if (!hasResults) return null;
+                        
+                        return (
+                          <div key={team.id} className="results-grid-column team-header-column">
+                            <h5 className="team-results-header" style={{ color: team.color }}>
+                              {team.name} ({team.code})
+                            </h5>
+                          </div>
+                        );
+                      })}
+                    </div>
                     
-                    if (!hasResults) return null;
-                    
-                    return (
-                      <div key={team.id} className="team-results-section">
-                        <h5 className="team-results-header" style={{ color: team.color }}>
-                          {team.name} ({team.code})
-                        </h5>
-                        {SPORTS_CONFIG.map((sport) => {
-                          const sportPlayers = teamSports[sport.id] || [];
-                          if (sportPlayers.length === 0) return null;
+                    {/* Sports Rows - Each sport is a row */}
+                    {SPORTS_CONFIG.map((sport) => {
+                      // Check if any team has players for this sport
+                      const hasSportData = TEAM_CARDS.some(team => {
+                        const teamSports = raffleResults[team.id] || {};
+                        const sportPlayers = teamSports[sport.id] || [];
+                        return sportPlayers.length > 0;
+                      });
+                      
+                      if (!hasSportData) return null;
+                      
+                      return (
+                        <div key={sport.id} className="sport-row-container">
+                          {/* Sport Header Row */}
+                          <div className="results-grid-row sport-headers-row">
+                            {TEAM_CARDS.map((team) => {
+                              const teamSports = raffleResults[team.id] || {};
+                              const sportPlayers = teamSports[sport.id] || [];
+                              if (sportPlayers.length === 0) return null;
+                              
+                              return (
+                                <div key={team.id} className="results-grid-column sport-header-column">
+                                  <h6 className="sport-results-header">
+                                    <span className="sport-emoji-small">{sport.emoji}</span>
+                                    {sport.name}
+                                  </h6>
+                                </div>
+                              );
+                            })}
+                          </div>
                           
-                          const teamRevealed = revealedPlayers[team.id] || {};
-                          const revealedCount = teamRevealed[sport.id] || 0;
-                          const visiblePlayers = sportPlayers.slice(0, revealedCount);
-                          
-                          return (
-                            <div key={sport.id} className="sport-results-subsection">
-                              <h6 className="sport-results-header">
-                                <span className="sport-emoji-small">{sport.emoji}</span>
-                                {sport.name} {revealedCount < sportPlayers.length && `(${revealedCount}/${sportPlayers.length})`}
-                              </h6>
-                              <ul className="results-list">
-                                {visiblePlayers.map((player, index) => {
-                                  const refKey = `${team.id}-${sport.id}-${index}`;
-                                  const isNewlyRevealed = index === visiblePlayers.length - 1 && revealedCount === visiblePlayers.length;
-                                  
-                                  return (
-                                    <motion.li 
-                                      key={player.id}
-                                      ref={(el) => {
-                                        if (el) {
-                                          resultRefs.current[refKey] = el;
-                                        }
-                                      }}
-                                      className={`result-card ${isNewlyRevealed ? 'result-card-active' : ''}`}
-                                      initial={{ opacity: 0, x: -20 }}
-                                      animate={{ opacity: 1, x: 0 }}
-                                      transition={{ 
-                                        duration: 0.3,
-                                        delay: 0
-                                      }}
-                                      whileHover={{ scale: 1.02, x: 5 }}
-                                    >
-                                      <span className="result-rank-badge">{index + 1}</span>
-                                      <div className="result-meta">
-                                        <strong>{player.name}</strong>
-                                        <span>{player.department} Dept.</span>
-                                      </div>
-                                      <span className="result-dot" />
-                                    </motion.li>
-                                  );
-                                })}
-                                {revealedCount < sportPlayers.length && (
-                                  <li className="result-card result-card-loading">
-                                    <span className="result-rank-badge">...</span>
-                                    <div className="result-meta">
-                                      <strong>Revealing...</strong>
-                                    </div>
-                                  </li>
-                                )}
-                              </ul>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                          {/* Players Row */}
+                          <div className="results-grid-row players-row">
+                            {TEAM_CARDS.map((team) => {
+                              const teamSports = raffleResults[team.id] || {};
+                              const sportPlayers = teamSports[sport.id] || [];
+                              if (sportPlayers.length === 0) return null;
+                              
+                              const teamRevealed = revealedPlayers[team.id] || {};
+                              const revealedCount = teamRevealed[sport.id] || 0;
+                              const visiblePlayers = sportPlayers.slice(0, revealedCount);
+                              
+                              return (
+                                <div key={team.id} className="results-grid-column players-column">
+                                  <ul className="results-list">
+                                    {visiblePlayers.map((player, index) => {
+                                      const refKey = `${team.id}-${sport.id}-${index}`;
+                                      const isNewlyRevealed = index === visiblePlayers.length - 1 && revealedCount === visiblePlayers.length;
+                                      
+                                      return (
+                                        <motion.li 
+                                          key={player.id}
+                                          ref={(el) => {
+                                            if (el) {
+                                              resultRefs.current[refKey] = el;
+                                            }
+                                          }}
+                                          className={`result-card ${isNewlyRevealed ? 'result-card-active' : ''}`}
+                                          initial={{ opacity: 0, x: -20 }}
+                                          animate={{ opacity: 1, x: 0 }}
+                                          transition={{ 
+                                            duration: 0.3,
+                                            delay: 0
+                                          }}
+                                          whileHover={{ scale: 1.02, x: 5 }}
+                                        >
+                                          <span className="result-rank-badge">{index + 1}</span>
+                                          <div className="result-meta">
+                                            <strong>{player.name}</strong>
+                                            <span>{player.department} Dept.</span>
+                                          </div>
+                                          <span className="result-dot" />
+                                        </motion.li>
+                                      );
+                                    })}
+                                    {revealedCount < sportPlayers.length && (
+                                      <li className="result-card result-card-loading">
+                                        <span className="result-rank-badge">...</span>
+                                        <div className="result-meta">
+                                          <strong>Revealing...</strong>
+                                        </div>
+                                      </li>
+                                    )}
+                                  </ul>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                   {Object.keys(raffleResults).length > 0 && (
                     <div className="pdf-download-section" ref={pdfButtonRef}>
                       <button type="button" className="pdf-download-btn" onClick={handleDownloadPDF}>
