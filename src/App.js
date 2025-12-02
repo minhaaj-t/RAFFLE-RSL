@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx-js-style';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
-import logoImage from './assets/images/logo.png';
 import bannerImage from './assets/images/banner.png';
 import './App.css';
 
@@ -69,82 +68,61 @@ const shuffleArray = (array) => {
 let audioContext = null;
 
 const initAudioContext = () => {
-  if (!audioContext && (window.AudioContext || window.webkitAudioContext)) {
-    try {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (error) {
-      console.warn('Audio context initialization failed:', error);
-    }
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
   }
   return audioContext;
 };
 
 const resumeAudioContext = async () => {
-  if (!audioContext) {
-    initAudioContext();
+  const ctx = initAudioContext();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
   }
-  if (audioContext && audioContext.state === 'suspended') {
-    try {
-      await audioContext.resume();
-    } catch (error) {
-      console.warn('Failed to resume audio context:', error);
-    }
-  }
-  return audioContext;
+  return ctx;
 };
 
-const playSound = async (frequency, duration, type = 'sine', volume = 0.3) => {
-  try {
-    const ctx = await resumeAudioContext();
-    if (!ctx) return;
-
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
-
-    oscillator.frequency.value = frequency;
-    oscillator.type = type;
-
-    gainNode.gain.setValueAtTime(volume, ctx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + duration);
-  } catch (error) {
-    // Silently fail if audio is not available
-    console.warn('Sound playback failed:', error);
+const playSound = (frequency, duration, type = 'sine', volume = 0.3) => {
+  const ctx = initAudioContext();
+  if (ctx.state === 'suspended') {
+    return;
   }
+  
+  const oscillator = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  
+  oscillator.frequency.value = frequency;
+  oscillator.type = type;
+  
+  gainNode.gain.setValueAtTime(0, ctx.currentTime);
+  gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + 0.01);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+  
+  oscillator.start(ctx.currentTime);
+  oscillator.stop(ctx.currentTime + duration);
 };
 
 const playRaffleStartSound = () => {
-  playSound(440, 0.2, 'sine', 0.6);
-  setTimeout(() => playSound(523.25, 0.2, 'sine', 0.6), 100);
-  setTimeout(() => playSound(659.25, 0.3, 'sine', 0.6), 200);
+  playSound(440, 0.2, 'sine', 0.5);
+  setTimeout(() => playSound(554, 0.2, 'sine', 0.5), 100);
+  setTimeout(() => playSound(659, 0.3, 'sine', 0.5), 200);
 };
 
-let tickerSoundCounter = 0;
 const playTickerSound = () => {
-  // Only play every 3rd tick to reduce frequency
-  tickerSoundCounter += 1;
-  if (tickerSoundCounter % 3 === 0) {
-    playSound(800, 0.08, 'square', 0.3);
-  }
+  playSound(300 + Math.random() * 200, 0.05, 'sine', 0.1);
 };
 
 const playCompletionSound = () => {
-  // Celebration fanfare
-  const notes = [523.25, 659.25, 783.99, 987.77, 1174.66];
-  notes.forEach((freq, index) => {
-    setTimeout(() => {
-      playSound(freq, 0.4, 'sine', 0.6);
-    }, index * 120);
+  [440, 554, 659, 880].forEach((freq, index) => {
+    setTimeout(() => playSound(freq, 0.2, 'sine', 0.4), index * 100);
   });
 };
 
 function App() {
-  const [phase] = useState('raffle'); // Start directly with raffle
+  const [phase] = useState('raffle');
   const [countdown, setCountdown] = useState(0);
   const [shuffledPlayers, setShuffledPlayers] = useState(PLAYER_POOL);
   // Results structure: { teamId: { sportId: [players] } }
@@ -184,14 +162,20 @@ function App() {
 
   useEffect(() => {
     if (phase === 'raffle' && hasStartedRaffle && countdown > 0) {
-      // Play countdown tick sound
-      if (countdown <= 3) {
-        playSound(300 + (countdown * 50), 0.15, 'sine', 0.5);
-      }
-      const timer = setTimeout(() => setCountdown((prev) => prev - 1), 1000);
-      return () => clearTimeout(timer);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
     }
+  }, [phase, hasStartedRaffle, countdown]);
 
+  useEffect(() => {
     if (phase === 'raffle' && hasStartedRaffle && countdown === 0 && isRaffling) {
       // Play start animation sound
       playSound(600, 0.2, 'sine', 0.5);
@@ -276,8 +260,8 @@ function App() {
     let allSportsComplete = true;
     
     // Check each sport in order to find which one is currently being revealed
-    for (const sport of SPORTS_CONFIG) {
-      const sportTeamsWithPlayers = [];
+    for (let sportIndex = 0; sportIndex < SPORTS_CONFIG.length; sportIndex++) {
+      const sport = SPORTS_CONFIG[sportIndex];
       let sportHasUnrevealed = false;
       
       TEAM_CARDS.forEach((team) => {
@@ -286,12 +270,9 @@ function App() {
         const sportPlayers = teamSports[sport.id] || [];
         const revealedCount = teamRevealed[sport.id] || 0;
         
-        if (sportPlayers.length > 0) {
-          sportTeamsWithPlayers.push({ teamId: team.id, revealedCount, totalCount: sportPlayers.length });
-          if (revealedCount < sportPlayers.length) {
-            sportHasUnrevealed = true;
-            allSportsComplete = false;
-          }
+        if (sportPlayers.length > 0 && revealedCount < sportPlayers.length) {
+          sportHasUnrevealed = true;
+          allSportsComplete = false;
         }
       });
       
@@ -518,7 +499,7 @@ function App() {
     setTickerIndex(0);
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadExcel = () => {
     if (Object.keys(raffleResults).length === 0) {
       return;
     }
@@ -532,280 +513,113 @@ function App() {
       return;
     }
 
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
+    // Create a new workbook
+    const workbook = XLSX.utils.book_new();
     
-    // Standard margins with consistent spacing
-    const marginLeft = 20;
-    const marginRight = 20;
-    const marginTop = 25;
-    const marginBottom = 25;
-    const contentWidth = pageWidth - marginLeft - marginRight;
-    const sectionPadding = 5;
+    // Create worksheet data array
+    const worksheetData = [];
     
-    // Colors
-    const black = [0, 0, 0];
-    const darkGray = [60, 60, 60];
-    const mediumGray = [120, 120, 120];
-    const veryLightGray = [245, 245, 245];
-
-    let yPos = marginTop;
-
-    // ========== HEADER SECTION ==========
-    // Add Logo
-    try {
-      const logoWidth = 40;
-      const logoHeight = 30;
-      const logoX = pageWidth / 2 - logoWidth / 2;
-      doc.addImage(logoImage, 'PNG', logoX, yPos, logoWidth, logoHeight);
-      yPos += logoHeight + 5;
-    } catch (error) {
-      console.warn('Logo not loaded, continuing without logo');
-    }
-
-    // Top border line
-    doc.setDrawColor(...black);
-    doc.setLineWidth(0.8);
-    doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
-    yPos += 8;
-
-    // Organization Name - Centered
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('RSL RAFFLE SYSTEM', pageWidth / 2, yPos, { align: 'center' });
+    // Header row with organization info
+    worksheetData.push(['RSL RAFFLE SYSTEM']);
+    worksheetData.push(['Official Team Member Selection Report - All Sports']);
+    worksheetData.push([]);
     
-    // Document Title - Centered with text wrapping
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    const titleText = 'Official Team Member Selection Report - All Sports';
-    const titleLines = doc.splitTextToSize(titleText, contentWidth);
-    doc.text(titleLines, pageWidth / 2, yPos + 7, { align: 'center' });
-    yPos += 7 * titleLines.length;
-    
-    yPos += 8;
-    
-    // Header bottom border
-    doc.setDrawColor(...black);
-    doc.setLineWidth(0.5);
-    doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
-    yPos += 12;
-
-    // ========== DOCUMENT INFORMATION SECTION ==========
-    const infoSectionY = yPos;
-    
-    // Two-column layout for information
-    const infoCol1X = marginLeft + sectionPadding;
-    const infoCol2X = marginLeft + contentWidth / 2 + sectionPadding;
-    const lineHeight = 7;
-    const labelWidth = 45;
-    
-    // Calculate all text wrapping first to determine section height
-    doc.setFontSize(9);
-    const teamNameLines = doc.splitTextToSize('All Teams', contentWidth / 2 - labelWidth - sectionPadding);
-    const sportNameLines = doc.splitTextToSize('All Sports', contentWidth / 2 - labelWidth - sectionPadding);
+    // Document Information
     const dateStr = new Date().toLocaleDateString('en-US', { 
       year: 'numeric', 
       month: 'long', 
       day: 'numeric' 
     });
-    const dateLines = doc.splitTextToSize(dateStr, contentWidth / 2 - labelWidth - sectionPadding);
-    const docId = `RSL-AllTeams-AllSports-${Date.now().toString().slice(-6)}`;
-    const docIdLines = doc.splitTextToSize(docId, contentWidth / 2 - labelWidth - sectionPadding);
-    
-    // Calculate section height
-    const titleHeight = 10;
-    const leftColHeight = (lineHeight * teamNameLines.length) + (lineHeight * sportNameLines.length) + lineHeight;
-    const rightColHeight = (lineHeight * dateLines.length) + lineHeight + (lineHeight * docIdLines.length);
-    const contentHeight = Math.max(leftColHeight, rightColHeight);
-    const infoSectionHeight = titleHeight + contentHeight + (sectionPadding * 2) + 5;
-    
-    // Draw section background box FIRST
-    doc.setFillColor(...veryLightGray);
-    doc.rect(marginLeft, infoSectionY, contentWidth, infoSectionHeight, 'F');
-    
-    // Draw section border
-    doc.setDrawColor(...black);
-    doc.setLineWidth(0.5);
-    doc.rect(marginLeft, infoSectionY, contentWidth, infoSectionHeight);
-    
-    yPos = infoSectionY + sectionPadding + 5;
-    
-    // Section title
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('DOCUMENT INFORMATION', marginLeft + sectionPadding, yPos);
-    
-    yPos += 10;
-    
-    // Left Column
-    let currentY = yPos;
-    
-    // Teams - with text wrapping
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Teams:', infoCol1X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    doc.text(teamNameLines, infoCol1X + labelWidth, currentY);
-    currentY += lineHeight * teamNameLines.length;
-    
-    // Sport - with text wrapping
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Sports:', infoCol1X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    doc.text(sportNameLines, infoCol1X + labelWidth, currentY);
-    currentY += lineHeight * sportNameLines.length;
-    
-    // Players Required per Sport per Team
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Players per Sport/Team:', infoCol1X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    const playersPerSportPerTeamPDF = Math.floor(PLAYER_POOL.length / (TEAM_CARDS.length * SPORTS_CONFIG.length));
-    doc.text(`${playersPerSportPerTeamPDF}`, infoCol1X + labelWidth, currentY);
-    
-    // Right Column
-    currentY = yPos;
-    
-    // Date - with text wrapping
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Date:', infoCol2X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    doc.text(dateLines, infoCol2X + labelWidth, currentY);
-    currentY += lineHeight * dateLines.length;
-    
-    // Time
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Time:', infoCol2X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
     const timeStr = new Date().toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit',
       second: '2-digit'
     });
-    doc.text(timeStr, infoCol2X + labelWidth, currentY);
-    currentY += lineHeight;
+    const docId = `RSL-AllTeams-AllSports-${Date.now().toString().slice(-6)}`;
     
-    // Document ID - with text wrapping
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('Document ID:', infoCol2X, currentY);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    doc.text(docIdLines, infoCol2X + labelWidth, currentY);
+    worksheetData.push(['DOCUMENT INFORMATION']);
+    worksheetData.push(['Teams:', 'All Teams']);
+    worksheetData.push(['Sports:', 'All Sports']);
+    worksheetData.push(['Players per Sport/Team:', Math.floor(PLAYER_POOL.length / (TEAM_CARDS.length * SPORTS_CONFIG.length))]);
+    worksheetData.push(['Date:', dateStr]);
+    worksheetData.push(['Time:', timeStr]);
+    worksheetData.push(['Document ID:', docId]);
+    worksheetData.push([]);
     
-    yPos = infoSectionY + infoSectionHeight + 12;
-
-    // ========== SELECTED PLAYERS SECTION ==========
-    // Section title with underline
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('SELECTED PLAYERS', marginLeft, yPos);
+    // SELECTED PLAYERS SECTION
+    worksheetData.push(['SELECTED PLAYERS']);
+    worksheetData.push([]);
     
-    // Underline
-    doc.setDrawColor(...black);
-    doc.setLineWidth(0.5);
-    const titleWidth = doc.getTextWidth('SELECTED PLAYERS');
-    doc.line(marginLeft, yPos + 2, marginLeft + titleWidth, yPos + 2);
-    
-    yPos += 10;
-
-    // Generate results for all teams and sports
+    // Team Headers Row
+    const teamHeaders = ['Team/Sport'];
     TEAM_CARDS.forEach((team) => {
       const teamSports = raffleResults[team.id] || {};
-      if (Object.keys(teamSports).length === 0) return;
-      
-      const teamData = TEAM_CARDS.find(t => t.id === team.id);
-      const teamName = teamData ? teamData.name : team.id;
-      
-      // Team header
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...black);
-      doc.text(`${teamName} (${teamData?.code || ''})`, marginLeft, yPos);
-      yPos += 8;
-      
-      // For each sport in this team
-      SPORTS_CONFIG.forEach((sport) => {
+      const hasResults = Object.keys(teamSports).length > 0;
+      if (hasResults) {
+        teamHeaders.push(`${team.name} (${team.code})`);
+      }
+    });
+    worksheetData.push(teamHeaders);
+    
+    // For each sport, add headers and players
+    SPORTS_CONFIG.forEach((sport) => {
+      // Check if any team has players for this sport
+      const hasSportData = TEAM_CARDS.some(team => {
+        const teamSports = raffleResults[team.id] || {};
         const sportPlayers = teamSports[sport.id] || [];
-        if (sportPlayers.length === 0) return;
-        
-        // Sport header
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...darkGray);
-        doc.text(`${sport.emoji} ${sport.name}`, marginLeft + 5, yPos);
-        yPos += 6;
-        
-        // List players for this sport
-        sportPlayers.forEach((player, index) => {
-          if (yPos > pageHeight - marginBottom - 10) {
-            doc.addPage();
-            yPos = marginTop;
-          }
-          
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(...black);
-          doc.text(`${index + 1}. ${player.name} (${player.department})`, marginLeft + 10, yPos);
-          yPos += 6;
-        });
-        
-        yPos += 4; // Space between sports
+        return sportPlayers.length > 0;
       });
       
-      yPos += 8; // Extra space between teams
+      if (!hasSportData) return;
+      
+      // Sport Header Row
+      const sportHeaderRow = [`${sport.emoji} ${sport.name}`];
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        if (sportPlayers.length > 0) {
+          sportHeaderRow.push(''); // Empty cell for alignment
+        }
+      });
+      worksheetData.push(sportHeaderRow);
+      
+      // Find max players count for this sport across all teams
+      let maxPlayers = 0;
+      const teamPlayerLists = [];
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        if (sportPlayers.length > 0) {
+          teamPlayerLists.push(sportPlayers);
+          maxPlayers = Math.max(maxPlayers, sportPlayers.length);
+        } else {
+          teamPlayerLists.push([]);
+        }
+      });
+      
+      // Add players row by row
+      for (let playerIndex = 0; playerIndex < maxPlayers; playerIndex++) {
+        const playerRow = [playerIndex === 0 ? 'Players:' : ''];
+        teamPlayerLists.forEach((sportPlayers) => {
+          if (playerIndex < sportPlayers.length) {
+            const player = sportPlayers[playerIndex];
+            playerRow.push(`${playerIndex + 1}. ${player.name} (${player.department})`);
+          } else {
+            playerRow.push(''); // Empty cell
+          }
+        });
+        worksheetData.push(playerRow);
+      }
+      
+      // Empty row between sports
+      worksheetData.push([]);
     });
-
-    // ========== SUMMARY SECTION ==========
-    const summarySectionHeight = 25;
     
-    // Check if we need a new page
-    if (yPos > pageHeight - marginBottom - summarySectionHeight) {
-      doc.addPage();
-      yPos = marginTop;
-    }
+    // Summary Section
+    worksheetData.push([]);
+    worksheetData.push(['SUMMARY']);
     
-    // Section background box
-    doc.setFillColor(...veryLightGray);
-    doc.rect(marginLeft, yPos, contentWidth, summarySectionHeight, 'F');
-    
-    // Section border
-    doc.setDrawColor(...black);
-    doc.setLineWidth(0.5);
-    doc.rect(marginLeft, yPos, contentWidth, summarySectionHeight);
-    
-    yPos += sectionPadding + 5;
-    
-    // Summary title
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...black);
-    doc.text('SUMMARY', marginLeft + sectionPadding, yPos);
-    
-    yPos += 8;
-    
-    // Summary content
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...darkGray);
-    
-    const summaryLabelWidth = 50;
-    const summaryX = marginLeft + sectionPadding;
-    
-    // Calculate total players across all teams and sports
+    // Calculate total players
     let totalPlayers = 0;
     TEAM_CARDS.forEach((team) => {
       const teamSports = raffleResults[team.id] || {};
@@ -815,65 +629,271 @@ function App() {
       });
     });
     
-    doc.setFont('helvetica', 'bold');
-    doc.text('Total Players Selected:', summaryX, yPos);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${totalPlayers}`, summaryX + summaryLabelWidth, yPos);
+    worksheetData.push(['Total Players Selected:', totalPlayers]);
+    worksheetData.push(['Selection Method:', 'Random Raffle from 500 Participants']);
     
-    yPos += 6;
+    // Create worksheet from data
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
     
-    doc.setFont('helvetica', 'bold');
-    doc.text('Selection Method:', summaryX, yPos);
-    doc.setFont('helvetica', 'normal');
-    const methodText = 'Random Raffle from 500 Participants';
-    const methodLines = doc.splitTextToSize(methodText, contentWidth - summaryLabelWidth - (sectionPadding * 2));
-    doc.text(methodLines, summaryX + summaryLabelWidth, yPos);
-
-    // ========== FOOTER ON ALL PAGES ==========
-    const totalPages = doc.internal.pages.length - 1;
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      
-      // Footer separator line
-      doc.setDrawColor(...black);
-      doc.setLineWidth(0.3);
-      doc.line(marginLeft, pageHeight - marginBottom + 5, pageWidth - marginRight, pageHeight - marginBottom + 5);
-      
-      // Footer text - properly aligned
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...mediumGray);
-      
-      // Left aligned - Page number
-      doc.text(
-        `Page ${i} of ${totalPages}`,
-        marginLeft,
-        pageHeight - marginBottom + 12,
-        { align: 'left' }
-      );
-      
-      // Right aligned - Generation time
-      doc.text(
-        `Generated on ${new Date().toLocaleString()}`,
-        pageWidth - marginRight,
-        pageHeight - marginBottom + 12,
-        { align: 'right' }
-      );
-      
-      // Center aligned - Document ID (on first page only)
-      if (i === 1) {
-        doc.text(
-          `Doc ID: ${docId}`,
-          pageWidth / 2,
-          pageHeight - marginBottom + 12,
-          { align: 'center' }
-        );
+    // Set column widths
+    const colWidths = [{ wch: 25 }]; // First column for labels
+    TEAM_CARDS.forEach(() => {
+      colWidths.push({ wch: 30 }); // Team columns
+    });
+    worksheet['!cols'] = colWidths;
+    
+    // Color definitions based on UI
+    const accentColor = { rgb: 'B6CB2F' }; // #B6CB2F
+    const accentColorLight = { rgb: 'E8F0A0' }; // Lighter version
+    const white = { rgb: 'FFFFFF' };
+    const darkGray = { rgb: '3C3C3C' };
+    const lightGray = { rgb: 'F5F5F5' };
+    const veryLightGray = { rgb: 'FAFAFA' };
+    
+    // Helper function to convert hex to RGB
+    const hexToRgb = (hex) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : null;
+    };
+    
+    // Convert team colors to RGB
+    const teamColors = TEAM_CARDS.map(team => {
+      const rgb = hexToRgb(team.color);
+      return rgb ? { rgb: `${rgb.r.toString(16).padStart(2, '0')}${rgb.g.toString(16).padStart(2, '0')}${rgb.b.toString(16).padStart(2, '0')}`.toUpperCase() } : accentColorLight;
+    });
+    
+    // Style all cells by iterating through worksheet
+    worksheet['!merges'] = worksheet['!merges'] || [];
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    
+    // Style header row (row 0)
+    for (let c = 0; c <= range.e.c; c++) {
+      const cell = XLSX.utils.encode_cell({ r: 0, c });
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 18, color: { rgb: white.rgb } },
+          fill: { fgColor: { rgb: accentColor.rgb } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
       }
     }
-
-    // Generate filename
-    const filename = `RSL_Raffle_AllTeams_AllSports_${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(filename);
+    worksheet['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: range.e.c } });
+    
+    // Style subtitle row (row 1)
+    for (let c = 0; c <= range.e.c; c++) {
+      const cell = XLSX.utils.encode_cell({ r: 1, c });
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 12, color: { rgb: darkGray.rgb } },
+          fill: { fgColor: { rgb: accentColorLight.rgb } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      }
+    }
+    worksheet['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: range.e.c } });
+    
+    // Find and style DOCUMENT INFORMATION section (row 3)
+    for (let r = 0; r <= range.e.r; r++) {
+      const cell = XLSX.utils.encode_cell({ r, c: 0 });
+      if (worksheet[cell] && worksheet[cell].v === 'DOCUMENT INFORMATION') {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 11, color: { rgb: darkGray.rgb } },
+          fill: { fgColor: { rgb: veryLightGray.rgb } },
+          border: {
+            top: { style: 'thin', color: { rgb: darkGray.rgb } },
+            bottom: { style: 'thin', color: { rgb: darkGray.rgb } },
+            left: { style: 'thin', color: { rgb: darkGray.rgb } },
+            right: { style: 'thin', color: { rgb: darkGray.rgb } }
+          }
+        };
+        // Style document info rows (next 6 rows)
+        for (let i = 1; i <= 6; i++) {
+          const labelCell = XLSX.utils.encode_cell({ r: r + i, c: 0 });
+          const valueCell = XLSX.utils.encode_cell({ r: r + i, c: 1 });
+          if (worksheet[labelCell]) {
+            worksheet[labelCell].s = {
+              font: { bold: true, sz: 10, color: { rgb: darkGray.rgb } },
+              fill: { fgColor: { rgb: lightGray.rgb } }
+            };
+          }
+          if (worksheet[valueCell]) {
+            worksheet[valueCell].s = {
+              font: { sz: 10, color: { rgb: darkGray.rgb } },
+              fill: { fgColor: { rgb: white.rgb } }
+            };
+          }
+        }
+        break;
+      }
+    }
+    
+    // Find and style SELECTED PLAYERS header
+    for (let r = 0; r <= range.e.r; r++) {
+      const cell = XLSX.utils.encode_cell({ r, c: 0 });
+      if (worksheet[cell] && worksheet[cell].v === 'SELECTED PLAYERS') {
+        for (let c = 0; c <= range.e.c; c++) {
+          const headerCell = XLSX.utils.encode_cell({ r, c });
+          if (worksheet[headerCell]) {
+            worksheet[headerCell].s = {
+              font: { bold: true, sz: 12, color: { rgb: white.rgb } },
+              fill: { fgColor: { rgb: accentColor.rgb } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: {
+                top: { style: 'medium', color: { rgb: darkGray.rgb } },
+                bottom: { style: 'medium', color: { rgb: darkGray.rgb } },
+                left: { style: 'medium', color: { rgb: darkGray.rgb } },
+                right: { style: 'medium', color: { rgb: darkGray.rgb } }
+              }
+            };
+          }
+        }
+        worksheet['!merges'].push({ s: { r, c: 0 }, e: { r, c: range.e.c } });
+        
+        // Find team headers row (2 rows after SELECTED PLAYERS)
+        const teamHeadersRow = r + 2;
+        let colIndex = 1;
+        TEAM_CARDS.forEach((team, teamIndex) => {
+          const teamSports = raffleResults[team.id] || {};
+          const hasResults = Object.keys(teamSports).length > 0;
+          if (hasResults) {
+            const teamHeaderCell = XLSX.utils.encode_cell({ r: teamHeadersRow, c: colIndex });
+            if (worksheet[teamHeaderCell]) {
+              worksheet[teamHeaderCell].s = {
+                font: { bold: true, sz: 11, color: { rgb: darkGray.rgb } },
+                fill: { fgColor: teamColors[teamIndex] },
+                alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+                border: {
+                  top: { style: 'thin', color: { rgb: darkGray.rgb } },
+                  bottom: { style: 'thin', color: { rgb: darkGray.rgb } },
+                  left: { style: 'thin', color: { rgb: darkGray.rgb } },
+                  right: { style: 'thin', color: { rgb: darkGray.rgb } }
+                }
+              };
+            }
+            colIndex++;
+          }
+        });
+        break;
+      }
+    }
+    
+    // Style sport headers and player cells
+    for (let r = 0; r <= range.e.r; r++) {
+      const cell = XLSX.utils.encode_cell({ r, c: 0 });
+      if (worksheet[cell] && worksheet[cell].v && typeof worksheet[cell].v === 'string') {
+        // Check if it's a sport header (contains emoji)
+        const cellValue = worksheet[cell].v;
+        if (cellValue.match(/[\u{1F300}-\u{1F9FF}]/u) && cellValue.length > 2) {
+          // This is a sport header row
+          let colIndex = 1;
+          TEAM_CARDS.forEach((team) => {
+            const teamSports = raffleResults[team.id] || {};
+            const sportPlayers = teamSports[SPORTS_CONFIG.find(s => cellValue.includes(s.emoji))?.id || ''] || [];
+            if (sportPlayers.length > 0) {
+              const sportHeaderCell = XLSX.utils.encode_cell({ r, c: colIndex });
+              if (worksheet[sportHeaderCell]) {
+                worksheet[sportHeaderCell].s = {
+                  font: { bold: true, sz: 10, color: { rgb: darkGray.rgb } },
+                  fill: { fgColor: { rgb: accentColorLight.rgb } },
+                  alignment: { horizontal: 'center', vertical: 'center' },
+                  border: {
+                    top: { style: 'thin', color: { rgb: accentColor.rgb } },
+                    bottom: { style: 'thin', color: { rgb: accentColor.rgb } },
+                    left: { style: 'thin', color: { rgb: darkGray.rgb } },
+                    right: { style: 'thin', color: { rgb: darkGray.rgb } }
+                  }
+                };
+              }
+              colIndex++;
+            }
+          });
+          
+          // Style player rows below this sport header
+          let playerRow = r + 1;
+          let maxPlayers = 0;
+          const teamPlayerLists = [];
+          TEAM_CARDS.forEach((team) => {
+            const teamSports = raffleResults[team.id] || {};
+            const sportId = SPORTS_CONFIG.find(s => cellValue.includes(s.emoji))?.id || '';
+            const sportPlayers = teamSports[sportId] || [];
+            if (sportPlayers.length > 0) {
+              teamPlayerLists.push(sportPlayers);
+              maxPlayers = Math.max(maxPlayers, sportPlayers.length);
+            } else {
+              teamPlayerLists.push([]);
+            }
+          });
+          
+          for (let playerIndex = 0; playerIndex < maxPlayers; playerIndex++) {
+            colIndex = 1;
+            teamPlayerLists.forEach((sportPlayers) => {
+              if (playerIndex < sportPlayers.length) {
+                const playerCell = XLSX.utils.encode_cell({ r: playerRow, c: colIndex });
+                if (worksheet[playerCell]) {
+                  worksheet[playerCell].s = {
+                    font: { sz: 9, color: { rgb: darkGray.rgb } },
+                    fill: { fgColor: { rgb: white.rgb } },
+                    alignment: { vertical: 'center' },
+                    border: {
+                      left: { style: 'thin', color: { rgb: lightGray.rgb } },
+                      right: { style: 'thin', color: { rgb: lightGray.rgb } }
+                    }
+                  };
+                }
+              }
+              colIndex++;
+            });
+            playerRow++;
+          }
+        }
+      }
+    }
+    
+    // Find and style SUMMARY section
+    for (let r = 0; r <= range.e.r; r++) {
+      const cell = XLSX.utils.encode_cell({ r, c: 0 });
+      if (worksheet[cell] && worksheet[cell].v === 'SUMMARY') {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 11, color: { rgb: white.rgb } },
+          fill: { fgColor: { rgb: accentColor.rgb } },
+          border: {
+            top: { style: 'medium', color: { rgb: darkGray.rgb } },
+            bottom: { style: 'thin', color: { rgb: darkGray.rgb } },
+            left: { style: 'thin', color: { rgb: darkGray.rgb } },
+            right: { style: 'thin', color: { rgb: darkGray.rgb } }
+          }
+        };
+        // Style summary content rows (next 2 rows)
+        for (let i = 1; i <= 2; i++) {
+          const labelCell = XLSX.utils.encode_cell({ r: r + i, c: 0 });
+          const valueCell = XLSX.utils.encode_cell({ r: r + i, c: 1 });
+          if (worksheet[labelCell]) {
+            worksheet[labelCell].s = {
+              font: { bold: true, sz: 10, color: { rgb: darkGray.rgb } },
+              fill: { fgColor: { rgb: veryLightGray.rgb } }
+            };
+          }
+          if (worksheet[valueCell]) {
+            worksheet[valueCell].s = {
+              font: { sz: 10, color: { rgb: darkGray.rgb } },
+              fill: { fgColor: { rgb: white.rgb } }
+            };
+          }
+        }
+        break;
+      }
+    }
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Raffle Results');
+    
+    // Generate filename and download
+    const filename = `RSL_Raffle_AllTeams_AllSports_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, filename);
   };
 
   const renderRaffle = () => {
@@ -1055,13 +1075,15 @@ function App() {
                   </div>
                   {Object.keys(raffleResults).length > 0 && (
                     <div className="pdf-download-section" ref={pdfButtonRef}>
-                      <button type="button" className="pdf-download-btn" onClick={handleDownloadPDF}>
+                      <button type="button" className="pdf-download-btn" onClick={handleDownloadExcel}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" />
-                          <line x1="12" y1="15" x2="12" y2="3" />
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                          <polyline points="10 9 9 9 8 9" />
                         </svg>
-                        Download PDF
+                        Download Excel
                       </button>
                     </div>
                   )}
