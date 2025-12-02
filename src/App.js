@@ -122,7 +122,9 @@ const playCompletionSound = () => {
 };
 
 function App() {
-  const [phase] = useState('raffle');
+  const [phase, setPhase] = useState('mode-selection'); // Start with mode selection
+  const [raffleMode, setRaffleMode] = useState(null); // 'all-sports' or 'sport-by-sport'
+  const [selectedSport, setSelectedSport] = useState(null); // For sport-by-sport mode
   const [countdown, setCountdown] = useState(0);
   const [shuffledPlayers, setShuffledPlayers] = useState(PLAYER_POOL);
   // Results structure: { teamId: { sportId: [players] } }
@@ -161,7 +163,7 @@ function App() {
   }, [tickerIndex, shuffledPlayers]);
 
   useEffect(() => {
-    if (phase === 'raffle' && hasStartedRaffle && countdown > 0) {
+    if ((phase === 'raffle' || phase === 'sport-raffle') && hasStartedRaffle && countdown > 0) {
       const timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -176,62 +178,104 @@ function App() {
   }, [phase, hasStartedRaffle, countdown]);
 
   useEffect(() => {
-    if (phase === 'raffle' && hasStartedRaffle && countdown === 0 && isRaffling) {
+    if ((phase === 'raffle' || phase === 'sport-raffle') && hasStartedRaffle && countdown === 0 && isRaffling) {
       // Play start animation sound
       playSound(600, 0.2, 'sine', 0.5);
       
-      // Distribute ALL 500 players across all teams and all sports randomly without duplicates
-      const totalPlayers = PLAYER_POOL.length; // 500 players
-      const totalTeams = TEAM_CARDS.length; // 4 teams
-      const totalSports = SPORTS_CONFIG.length; // 6 sports
-      const totalSlots = totalTeams * totalSports; // 24 slots total
-      const basePlayersPerSlot = Math.floor(totalPlayers / totalSlots); // ~20 per slot
-      const remainder = totalPlayers % totalSlots; // Remaining players to distribute
-      
-      // Shuffle all players randomly
-      const shuffled = [...PLAYER_POOL];
-      shuffleArray(shuffled);
-      
-      const results = {};
-      const revealed = {};
-      let playerIndex = 0;
-      
-      // Create array of all team-sport combinations and shuffle for random distribution
-      const teamSportCombos = [];
-      TEAM_CARDS.forEach((team) => {
-        SPORTS_CONFIG.forEach((sport) => {
-          teamSportCombos.push({ teamId: team.id, sportId: sport.id });
+      if (phase === 'raffle') {
+        // All Sports Raffle - Distribute ALL 500 players across all teams and all sports
+        const totalPlayers = PLAYER_POOL.length; // 500 players
+        const totalTeams = TEAM_CARDS.length; // 4 teams
+        const totalSports = SPORTS_CONFIG.length; // 6 sports
+        const totalSlots = totalTeams * totalSports; // 24 slots total
+        const basePlayersPerSlot = Math.floor(totalPlayers / totalSlots); // ~20 per slot
+        const remainder = totalPlayers % totalSlots; // Remaining players to distribute
+        
+        // Shuffle all players randomly
+        const shuffled = [...PLAYER_POOL];
+        shuffleArray(shuffled);
+        
+        const results = {};
+        const revealed = {};
+        let playerIndex = 0;
+        
+        // Create array of all team-sport combinations and shuffle for random distribution
+        const teamSportCombos = [];
+        TEAM_CARDS.forEach((team) => {
+          SPORTS_CONFIG.forEach((sport) => {
+            teamSportCombos.push({ teamId: team.id, sportId: sport.id });
+          });
         });
-      });
-      shuffleArray(teamSportCombos);
-      
-      // Distribute all 500 players randomly
-      teamSportCombos.forEach((combo, comboIndex) => {
-        // Add one extra player to first 'remainder' slots to use all 500 players
-        const playersForThisSlot = basePlayersPerSlot + (comboIndex < remainder ? 1 : 0);
+        shuffleArray(teamSportCombos);
         
-        if (!results[combo.teamId]) {
-          results[combo.teamId] = {};
-          revealed[combo.teamId] = {};
-        }
+        // Distribute all 500 players randomly
+        teamSportCombos.forEach((combo, comboIndex) => {
+          // Add one extra player to first 'remainder' slots to use all 500 players
+          const playersForThisSlot = basePlayersPerSlot + (comboIndex < remainder ? 1 : 0);
+          
+          if (!results[combo.teamId]) {
+            results[combo.teamId] = {};
+            revealed[combo.teamId] = {};
+          }
+          
+          const sportPlayers = [];
+          for (let i = 0; i < playersForThisSlot && playerIndex < shuffled.length; i++) {
+            sportPlayers.push(shuffled[playerIndex]);
+            playerIndex++;
+          }
+          
+          // Shuffle players within this sport for more randomness
+          shuffleArray(sportPlayers);
+          results[combo.teamId][combo.sportId] = sportPlayers;
+          revealed[combo.teamId][combo.sportId] = 0; // Start with 0 revealed
+        });
         
-        const sportPlayers = [];
-        for (let i = 0; i < playersForThisSlot && playerIndex < shuffled.length; i++) {
-          sportPlayers.push(shuffled[playerIndex]);
-          playerIndex++;
-        }
+        setRaffleResults(results);
+        setRevealedPlayers(revealed);
+        setIsRaffling(false);
+      } else if (phase === 'sport-raffle' && selectedSport) {
+        // Sport-by-Sport Raffle - Distribute players for selected sport only
+        const totalPlayers = PLAYER_POOL.length; // 500 players
+        const totalTeams = TEAM_CARDS.length; // 4 teams
+        const playersPerTeam = Math.floor(totalPlayers / totalTeams); // ~125 per team
         
-        // Shuffle players within this sport for more randomness
-        shuffleArray(sportPlayers);
-        results[combo.teamId][combo.sportId] = sportPlayers;
-        revealed[combo.teamId][combo.sportId] = 0; // Start with 0 revealed
-      });
-      
-      setRaffleResults(results);
-      setRevealedPlayers(revealed);
-      setIsRaffling(false);
+        // Shuffle all players randomly
+        const shuffled = [...PLAYER_POOL];
+        shuffleArray(shuffled);
+        
+        const results = {};
+        const revealed = {};
+        let playerIndex = 0;
+        
+        // Shuffle teams for random distribution
+        const shuffledTeams = [...TEAM_CARDS];
+        shuffleArray(shuffledTeams);
+        
+        // Distribute players for this sport across all teams
+        shuffledTeams.forEach((team) => {
+          if (!results[team.id]) {
+            results[team.id] = {};
+            revealed[team.id] = {};
+          }
+          
+          const sportPlayers = [];
+          for (let i = 0; i < playersPerTeam && playerIndex < shuffled.length; i++) {
+            sportPlayers.push(shuffled[playerIndex]);
+            playerIndex++;
+          }
+          
+          // Shuffle players within this team for more randomness
+          shuffleArray(sportPlayers);
+          results[team.id][selectedSport.id] = sportPlayers;
+          revealed[team.id][selectedSport.id] = 0; // Start with 0 revealed
+        });
+        
+        setRaffleResults(results);
+        setRevealedPlayers(revealed);
+        setIsRaffling(false);
+      }
     }
-  }, [phase, hasStartedRaffle, countdown, isRaffling]);
+  }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport]);
 
   useEffect(() => {
     if (!isRaffling) {
@@ -485,6 +529,54 @@ function App() {
     }
   }, [raffleResults, revealedPlayers, hasStartedRaffle, isRaffling]);
 
+
+  const handleModeSelection = (mode) => {
+    setRaffleMode(mode);
+    if (mode === 'all-sports') {
+      setPhase('raffle');
+    } else {
+      setPhase('sport-selection');
+    }
+  };
+
+  const handleSportSelect = (sport) => {
+    setSelectedSport(sport);
+    setPhase('sport-raffle');
+  };
+
+  const handleBackToModeSelection = () => {
+    setPhase('mode-selection');
+    setRaffleMode(null);
+    setSelectedSport(null);
+    setRaffleResults({});
+    setRevealedPlayers({});
+    setHasStartedRaffle(false);
+    setIsRaffling(false);
+    setCountdown(0);
+  };
+
+  const handleBackToSportSelection = () => {
+    setPhase('sport-selection');
+    setSelectedSport(null);
+    setRaffleResults({});
+    setRevealedPlayers({});
+    setHasStartedRaffle(false);
+    setIsRaffling(false);
+    setCountdown(0);
+  };
+
+  const handleNextSport = () => {
+    const currentIndex = SPORTS_CONFIG.findIndex(s => s.id === selectedSport.id);
+    if (currentIndex < SPORTS_CONFIG.length - 1) {
+      const nextSport = SPORTS_CONFIG[currentIndex + 1];
+      handleSportSelect(nextSport);
+      setRaffleResults({});
+      setRevealedPlayers({});
+      setHasStartedRaffle(false);
+      setIsRaffling(false);
+      setCountdown(0);
+    }
+  };
 
   const handleStartRaffle = async () => {
     // Initialize and resume audio context before playing sounds
@@ -896,6 +988,106 @@ function App() {
     XLSX.writeFile(workbook, filename);
   };
 
+  const renderModeSelection = () => {
+    return (
+      <motion.div 
+        className="raffle-wrapper"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="raffle-panel">
+          <div className="start-panel">
+            <h3 style={{ marginBottom: '20px', fontSize: 'clamp(1.2rem, 3vw, 1.5rem)' }}>
+              Select Raffle Mode
+            </h3>
+            <div className="mode-selection-grid">
+              <motion.button 
+                type="button" 
+                className="mode-card mode-card-primary" 
+                onClick={() => handleModeSelection('all-sports')}
+                whileHover={{ scale: 1.02, y: -5 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="mode-card-icon">🎲</div>
+                <h4 className="mode-card-title">All Sports Raffle</h4>
+                <p className="mode-card-description">
+                  Distribute all 500 players across all teams and all sports in one raffle
+                </p>
+                <div className="mode-card-arrow">→</div>
+              </motion.button>
+              
+              <motion.button 
+                type="button" 
+                className="mode-card mode-card-secondary" 
+                onClick={() => handleModeSelection('sport-by-sport')}
+                whileHover={{ scale: 1.02, y: -5 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="mode-card-icon">⚽</div>
+                <h4 className="mode-card-title">Sport-by-Sport Raffle</h4>
+                <p className="mode-card-description">
+                  Raffle one sport at a time, selecting players for each sport separately
+                </p>
+                <div className="mode-card-arrow">→</div>
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const renderSportSelection = () => {
+    return (
+      <motion.div 
+        className="raffle-wrapper"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="raffle-panel">
+          <div className="start-panel">
+            <button 
+              type="button" 
+              onClick={handleBackToModeSelection}
+              style={{ 
+                marginBottom: '20px', 
+                padding: '8px 16px', 
+                background: 'rgba(182, 203, 47, 0.1)',
+                border: '1px solid #B6CB2F',
+                borderRadius: '8px',
+                color: '#B6CB2F',
+                cursor: 'pointer'
+              }}
+            >
+              ← Back to Mode Selection
+            </button>
+            <h3 style={{ marginBottom: '20px', fontSize: 'clamp(1.2rem, 3vw, 1.5rem)' }}>
+              Select a Sport to Raffle
+            </h3>
+            <div className="sport-selection-grid">
+              {SPORTS_CONFIG.map((sport) => (
+                <motion.button
+                  key={sport.id}
+                  type="button"
+                  className="sport-card"
+                  onClick={() => handleSportSelect(sport)}
+                  whileHover={{ scale: 1.05, y: -5 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <div className="sport-card-emoji">{sport.emoji}</div>
+                  <div className="sport-card-name">{sport.name}</div>
+                  <div className="sport-card-arrow">→</div>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
   const renderRaffle = () => {
     return (
       <motion.div 
@@ -962,7 +1154,53 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <h4 className="results-title">Raffle Results - All Teams & Sports</h4>
+                  <h4 className="results-title">
+                    {phase === 'sport-raffle' && selectedSport 
+                      ? `Raffle Results - ${selectedSport.emoji} ${selectedSport.name}` 
+                      : 'Raffle Results - All Teams & Sports'}
+                  </h4>
+                  {phase === 'sport-raffle' && selectedSport && (
+                    <div style={{ 
+                      marginBottom: '20px', 
+                      display: 'flex', 
+                      gap: '12px', 
+                      justifyContent: 'center',
+                      flexWrap: 'wrap'
+                    }}>
+                      <button 
+                        type="button" 
+                        onClick={handleBackToSportSelection}
+                        style={{ 
+                          padding: '10px 20px', 
+                          background: 'rgba(182, 203, 47, 0.1)',
+                          border: '1px solid #B6CB2F',
+                          borderRadius: '8px',
+                          color: '#B6CB2F',
+                          cursor: 'pointer',
+                          fontWeight: '600'
+                        }}
+                      >
+                        ← Back to Sports
+                      </button>
+                      {SPORTS_CONFIG.findIndex(s => s.id === selectedSport.id) < SPORTS_CONFIG.length - 1 && (
+                        <button 
+                          type="button" 
+                          onClick={handleNextSport}
+                          style={{ 
+                            padding: '10px 20px', 
+                            background: 'linear-gradient(135deg, rgba(182, 203, 47, 0.2) 0%, rgba(155, 176, 37, 0.2) 100%)',
+                            border: '2px solid #B6CB2F',
+                            borderRadius: '8px',
+                            color: '#B6CB2F',
+                            cursor: 'pointer',
+                            fontWeight: '600'
+                          }}
+                        >
+                          Next Sport →
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="results-grid-container">
                     {/* Team Headers Row */}
                     <div className="results-grid-row team-headers-row">
@@ -982,7 +1220,10 @@ function App() {
                     </div>
                     
                     {/* Sports Rows - Each sport is a row */}
-                    {SPORTS_CONFIG.map((sport) => {
+                    {(phase === 'sport-raffle' && selectedSport 
+                      ? [selectedSport] 
+                      : SPORTS_CONFIG
+                    ).map((sport) => {
                       // Check if any team has players for this sport
                       const hasSportData = TEAM_CARDS.some(team => {
                         const teamSports = raffleResults[team.id] || {};
@@ -1148,7 +1389,9 @@ function App() {
           </p>
         </header>
 
-        {phase === 'raffle' && (
+        {phase === 'mode-selection' && renderModeSelection()}
+        {phase === 'sport-selection' && renderSportSelection()}
+        {(phase === 'raffle' || phase === 'sport-raffle') && (
           <>
             {renderRaffle()}
           </>

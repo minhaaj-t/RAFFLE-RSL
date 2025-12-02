@@ -500,6 +500,219 @@ h2 {
   }
 }
 
+/* Mode Selection Cards */
+.mode-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(20px, 4vw, 32px);
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.mode-card {
+  position: relative;
+  padding: clamp(24px, 4vw, 32px);
+  border-radius: clamp(16px, 3vw, 20px);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vw, 16px);
+  overflow: hidden;
+  background: var(--bg-card);
+  backdrop-filter: blur(10px);
+}
+
+.mode-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(182, 203, 47, 0.1) 0%, rgba(155, 176, 37, 0.05) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.mode-card:hover::before {
+  opacity: 1;
+}
+
+.mode-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mode-card-primary {
+  border-color: rgba(182, 203, 47, 0.4);
+  box-shadow: 0 8px 24px rgba(182, 203, 47, 0.2);
+}
+
+.mode-card-primary:hover {
+  border-color: rgba(182, 203, 47, 0.8);
+  box-shadow: 0 12px 32px rgba(182, 203, 47, 0.4);
+}
+
+.mode-card-secondary {
+  border-color: rgba(182, 203, 47, 0.3);
+  box-shadow: 0 8px 24px rgba(182, 203, 47, 0.15);
+}
+
+.mode-card-secondary:hover {
+  border-color: rgba(182, 203, 47, 0.7);
+  box-shadow: 0 12px 32px rgba(182, 203, 47, 0.3);
+}
+
+.mode-card-icon {
+  font-size: clamp(3rem, 6vw, 4rem);
+  line-height: 1;
+  margin-bottom: clamp(8px, 1.5vw, 12px);
+  filter: drop-shadow(0 4px 8px rgba(182, 203, 47, 0.4));
+}
+
+.mode-card-title {
+  margin: 0;
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.mode-card-description {
+  margin: 0;
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.mode-card-arrow {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--accent-color);
+  opacity: 0.6;
+  transition: all 0.3s ease;
+  align-self: flex-end;
+  margin-top: auto;
+}
+
+.mode-card:hover .mode-card-arrow {
+  opacity: 1;
+  transform: translateX(5px);
+}
+
+/* Sport Selection Cards */
+.sport-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: clamp(16px, 3vw, 20px);
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sport-card {
+  position: relative;
+  padding: clamp(20px, 3vw, 28px);
+  border-radius: clamp(12px, 2vw, 16px);
+  border: 2px solid rgba(182, 203, 47, 0.3);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2vw, 14px);
+  background: var(--bg-card);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.sport-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(182, 203, 47, 0.15) 0%, rgba(155, 176, 37, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 0;
+}
+
+.sport-card:hover {
+  border-color: rgba(182, 203, 47, 0.8);
+  box-shadow: 0 8px 24px rgba(182, 203, 47, 0.3);
+}
+
+.sport-card:hover::before {
+  opacity: 1;
+}
+
+.sport-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.sport-card-emoji {
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+  line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(182, 203, 47, 0.4));
+  transition: transform 0.3s ease;
+}
+
+.sport-card:hover .sport-card-emoji {
+  transform: scale(1.1) rotate(5deg);
+}
+
+.sport-card-name {
+  font-size: clamp(1rem, 2.5vw, 1.1rem);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.sport-card-arrow {
+  font-size: clamp(1.2rem, 2.5vw, 1.5rem);
+  color: var(--accent-color);
+  opacity: 0;
+  transition: all 0.3s ease;
+  transform: translateX(-10px);
+}
+
+.sport-card:hover .sport-card-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Responsive adjustments for mode and sport cards */
+@media (max-width: 768px) {
+  .mode-selection-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .sport-selection-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .sport-selection-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .sport-card {
+    padding: 16px;
+  }
+}
+
 .countdown {
   font-size: clamp(1rem, 2vw, 1.1rem);
   color: #f97316;
