@@ -21,3 +21,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# server files (keep code, ignore sensitive data)
+# server/.env
+# server/logs
