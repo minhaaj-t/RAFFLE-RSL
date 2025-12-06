@@ -234,7 +234,6 @@ function App() {
       if (phase === 'raffle') {
         // All Sports Raffle - Distribute ALL registered players across all sports (each player in one sport only)
         const totalTeams = TEAM_CARDS.length; // 4 teams
-        const totalSports = SPORTS_CONFIG.length; // 7 sports
         
         const results = {};
         const revealed = {};
