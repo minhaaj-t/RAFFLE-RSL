@@ -143,7 +143,12 @@ function App() {
     const fetchPlayers = async () => {
       try {
         setLoadingPlayers(true);
-        const response = await fetch('http://localhost:5000/api/employees');
+        // Use environment variable for API URL, fallback based on environment
+        // In production (Vercel), use relative path /api
+        // In development, use localhost:5000
+        const apiUrl = process.env.REACT_APP_API_URL || 
+          (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+        const response = await fetch(`${apiUrl}/employees`);
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.details || `Server error: ${response.status}`);
