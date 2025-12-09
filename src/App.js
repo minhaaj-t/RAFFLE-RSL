@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
+import jsPDF from 'jspdf';
 import './App.css';
 
 // Banner images from public folder
@@ -1408,6 +1409,494 @@ function App() {
     XLSX.writeFile(workbook, filename);
   };
 
+  const handleDownloadPDF = () => {
+    if (Object.keys(raffleResults).length === 0) {
+      return;
+    }
+    
+    // Check if all teams have results
+    const hasAllResults = TEAM_CARDS.every(team => 
+      raffleResults[team.id] && Object.keys(raffleResults[team.id]).length > 0
+    );
+    
+    if (!hasAllResults) {
+      return;
+    }
+
+    // Create PDF document
+    const pdf = new jsPDF('landscape', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let yPosition = 10;
+    const margin = 10;
+    const lineHeight = 6;
+    const sectionSpacing = 8;
+    const cellPadding = 3;
+
+    // Helper function to add new page if needed
+    const checkNewPage = (requiredSpace = 20) => {
+      if (yPosition + requiredSpace > pageHeight - margin) {
+        pdf.addPage();
+        yPosition = margin;
+        return true;
+      }
+      return false;
+    };
+
+    // Header with better styling
+    pdf.setFillColor(182, 203, 47); // #B6CB2F
+    pdf.rect(0, 0, pageWidth, 22, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('RSL RAFFLE SYSTEM', pageWidth / 2, 11, { align: 'center' });
+    pdf.setFontSize(13);
+    pdf.text('Official Team Member Selection Report - All Sports', pageWidth / 2, 18, { align: 'center' });
+    
+    yPosition = 28;
+    pdf.setTextColor(0, 0, 0);
+
+    // Document Information - Better formatted in two columns
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, yPosition - 3, pageWidth - (margin * 2), 20, 'F');
+    pdf.setDrawColor(200, 200, 200);
+    pdf.rect(margin, yPosition - 3, pageWidth - (margin * 2), 20, 'S');
+    
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('DOCUMENT INFORMATION', margin + 5, yPosition);
+    yPosition += lineHeight + 2;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    const dateStr = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    const timeStr = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const docId = `RSL-AllTeams-AllSports-${Date.now().toString().slice(-6)}`;
+    
+    const infoStartX = margin + 5;
+    const infoCol2X = pageWidth / 2;
+    
+    pdf.text(`Teams:`, infoStartX, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`All Teams`, infoStartX + 20, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Date:`, infoCol2X, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(dateStr, infoCol2X + 20, yPosition);
+    yPosition += lineHeight;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Sports:`, infoStartX, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`All Sports`, infoStartX + 20, yPosition);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Time:`, infoCol2X, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(timeStr, infoCol2X + 20, yPosition);
+    yPosition += lineHeight;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Document ID:`, infoStartX, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(docId, infoStartX + 30, yPosition);
+    
+    yPosition += sectionSpacing + 5;
+
+    // Selected Players Section
+    checkNewPage(30);
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SELECTED PLAYERS', margin, yPosition);
+    yPosition += lineHeight + 3;
+
+    // For each sport
+    SPORTS_CONFIG.forEach((sport) => {
+      // Check if any team has players for this sport
+      const hasSportData = TEAM_CARDS.some(team => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        return sportPlayers.length > 0;
+      });
+      
+      if (!hasSportData) return;
+
+      checkNewPage(35);
+      
+      // Sport Header with better styling (remove emoji to avoid encoding issues)
+      pdf.setFillColor(232, 240, 160); // Light accent color
+      pdf.rect(margin, yPosition - 4, pageWidth - (margin * 2), 7, 'F');
+      pdf.setDrawColor(200, 200, 200);
+      pdf.rect(margin, yPosition - 4, pageWidth - (margin * 2), 7, 'S');
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${sport.name}`, margin + 5, yPosition);
+      yPosition += lineHeight + 4;
+
+      // Calculate column width - equal distribution with spacing
+      const availableWidth = pageWidth - (margin * 2);
+      const colSpacing = 2;
+      const colWidth = (availableWidth - (colSpacing * (TEAM_CARDS.length - 1))) / TEAM_CARDS.length;
+      let startX = margin;
+      let maxPlayerY = yPosition; // Track maximum player Y position across all teams
+      
+      // First, find the maximum number of players for this sport across all teams
+      let maxPlayersCount = 0;
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        maxPlayersCount = Math.max(maxPlayersCount, sportPlayers.length);
+      });
+      
+      // Draw team headers first (all aligned)
+      TEAM_CARDS.forEach((team, teamIndex) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        
+        if (sportPlayers.length === 0) {
+          startX += colWidth + colSpacing;
+          return;
+        }
+
+        // Team header with border
+        const teamColor = team.color.replace('#', '');
+        const r = parseInt(teamColor.substring(0, 2), 16);
+        const g = parseInt(teamColor.substring(2, 4), 16);
+        const b = parseInt(teamColor.substring(4, 6), 16);
+        pdf.setFillColor(r, g, b);
+        pdf.rect(startX, yPosition - 3, colWidth, 6, 'F');
+        pdf.setDrawColor(150, 150, 150);
+        pdf.rect(startX, yPosition - 3, colWidth, 6, 'S');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        const teamText = `${team.name} (${team.code})`;
+        pdf.text(teamText, startX + colWidth / 2, yPosition, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+        
+        startX += colWidth + colSpacing;
+      });
+      
+      yPosition += lineHeight + 2;
+      
+      // Now draw players row by row, ensuring alignment
+      startX = margin;
+      for (let playerIndex = 0; playerIndex < maxPlayersCount; playerIndex++) {
+        checkNewPage(10);
+        if (yPosition + 8 > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin + 5;
+        }
+        
+        let currentX = margin;
+        
+        TEAM_CARDS.forEach((team) => {
+          const teamSports = raffleResults[team.id] || {};
+          const sportPlayers = teamSports[sport.id] || [];
+          
+          if (sportPlayers.length === 0) {
+            currentX += colWidth + colSpacing;
+            return;
+          }
+          
+          // Draw cell border
+          pdf.setDrawColor(220, 220, 220);
+          pdf.rect(currentX, yPosition - 4, colWidth, 8, 'S');
+          
+          if (playerIndex < sportPlayers.length) {
+            const player = sportPlayers[playerIndex];
+            const empCode = player.employeeCode ? ` [${player.employeeCode}]` : '';
+            const playerText = `${playerIndex + 1}. ${player.name}${empCode}`;
+            const deptText = player.department || '';
+            
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'normal');
+            
+            // Wrap text if too long
+            const maxWidth = colWidth - (cellPadding * 2);
+            const lines = pdf.splitTextToSize(playerText, maxWidth);
+            pdf.text(lines[0], currentX + cellPadding, yPosition);
+            
+            if (deptText) {
+              pdf.setFontSize(7);
+              pdf.setTextColor(100, 100, 100);
+              const deptLines = pdf.splitTextToSize(deptText, maxWidth);
+              pdf.text(deptLines[0], currentX + cellPadding, yPosition + 3.5);
+              pdf.setTextColor(0, 0, 0);
+            }
+          }
+          
+          currentX += colWidth + colSpacing;
+        });
+        
+        yPosition += 8;
+        maxPlayerY = Math.max(maxPlayerY, yPosition);
+      }
+      
+      yPosition = maxPlayerY + sectionSpacing + 3;
+    });
+
+    // Summary with better styling
+    checkNewPage(25);
+    yPosition += 3;
+    pdf.setFillColor(182, 203, 47); // Accent color
+    pdf.rect(margin, yPosition - 4, pageWidth - (margin * 2), 7, 'F');
+    pdf.setDrawColor(150, 150, 150);
+    pdf.rect(margin, yPosition - 4, pageWidth - (margin * 2), 7, 'S');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SUMMARY', margin + 5, yPosition);
+    yPosition += lineHeight + 4;
+    
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    
+    // Calculate total players
+    let totalPlayers = 0;
+    TEAM_CARDS.forEach((team) => {
+      const teamSports = raffleResults[team.id] || {};
+      SPORTS_CONFIG.forEach((sport) => {
+        const sportPlayers = teamSports[sport.id] || [];
+        totalPlayers += sportPlayers.length;
+      });
+    });
+    
+    pdf.text(`Total Players Selected:`, margin + 5, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${totalPlayers}`, margin + 55, yPosition);
+    yPosition += lineHeight;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Selection Method:`, margin + 5, yPosition);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`Random Raffle from ${playerPool.length} Participants`, margin + 45, yPosition);
+
+    // Generate separate PDF for each sport (not combined)
+    SPORTS_CONFIG.forEach((sport) => {
+      const hasSportData = TEAM_CARDS.some(team => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        return sportPlayers.length > 0;
+      });
+      
+      if (!hasSportData) return;
+      
+      // Create new PDF for this sport
+      const sportPdf = new jsPDF('landscape', 'mm', 'a4');
+      const sportPageWidth = sportPdf.internal.pageSize.getWidth();
+      const sportPageHeight = sportPdf.internal.pageSize.getHeight();
+      let sportYPosition = 10;
+      const sportMargin = 10;
+      const sportLineHeight = 6;
+      const sportSectionSpacing = 8;
+      const sportCellPadding = 3;
+
+      const checkSportNewPage = (requiredSpace = 20) => {
+        if (sportYPosition + requiredSpace > sportPageHeight - sportMargin) {
+          sportPdf.addPage();
+          sportYPosition = sportMargin;
+          return true;
+        }
+        return false;
+      };
+
+      // Header
+      sportPdf.setFillColor(182, 203, 47);
+      sportPdf.rect(0, 0, sportPageWidth, 22, 'F');
+      sportPdf.setTextColor(255, 255, 255);
+      sportPdf.setFontSize(22);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text('RSL RAFFLE SYSTEM', sportPageWidth / 2, 11, { align: 'center' });
+      sportPdf.setFontSize(13);
+      sportPdf.text(`Team Member Selection - ${sport.name}`, sportPageWidth / 2, 18, { align: 'center' });
+      
+      sportYPosition = 28;
+      sportPdf.setTextColor(0, 0, 0);
+
+      // Document Information
+      sportPdf.setFillColor(245, 245, 245);
+      sportPdf.rect(sportMargin, sportYPosition - 3, sportPageWidth - (sportMargin * 2), 20, 'F');
+      sportPdf.setDrawColor(200, 200, 200);
+      sportPdf.rect(sportMargin, sportYPosition - 3, sportPageWidth - (sportMargin * 2), 20, 'S');
+      
+      sportPdf.setFontSize(11);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text('DOCUMENT INFORMATION', sportMargin + 5, sportYPosition);
+      sportYPosition += sportLineHeight + 2;
+      
+      sportPdf.setFontSize(9);
+      sportPdf.setFont('helvetica', 'normal');
+      const sportInfoStartX = sportMargin + 5;
+      const sportInfoCol2X = sportPageWidth / 2;
+      
+      sportPdf.text(`Sport:`, sportInfoStartX, sportYPosition);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text(sport.name, sportInfoStartX + 20, sportYPosition);
+      sportPdf.setFont('helvetica', 'normal');
+      sportPdf.text(`Date:`, sportInfoCol2X, sportYPosition);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text(dateStr, sportInfoCol2X + 20, sportYPosition);
+      sportYPosition += sportLineHeight;
+      
+      sportPdf.setFont('helvetica', 'normal');
+      sportPdf.text(`Teams:`, sportInfoStartX, sportYPosition);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text('All Teams', sportInfoStartX + 20, sportYPosition);
+      sportPdf.setFont('helvetica', 'normal');
+      sportPdf.text(`Time:`, sportInfoCol2X, sportYPosition);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text(timeStr, sportInfoCol2X + 20, sportYPosition);
+      
+      sportYPosition += sportSectionSpacing + 5;
+
+      // Sport Header
+      checkSportNewPage(35);
+      sportPdf.setFillColor(232, 240, 160);
+      sportPdf.rect(sportMargin, sportYPosition - 4, sportPageWidth - (sportMargin * 2), 7, 'F');
+      sportPdf.setDrawColor(200, 200, 200);
+      sportPdf.rect(sportMargin, sportYPosition - 4, sportPageWidth - (sportMargin * 2), 7, 'S');
+      sportPdf.setFontSize(12);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text(`${sport.name} - Selected Players`, sportMargin + 5, sportYPosition);
+      sportYPosition += sportLineHeight + 4;
+
+      // Calculate column width
+      const sportAvailableWidth = sportPageWidth - (sportMargin * 2);
+      const sportColSpacing = 2;
+      const sportColWidth = (sportAvailableWidth - (sportColSpacing * (TEAM_CARDS.length - 1))) / TEAM_CARDS.length;
+      let sportStartX = sportMargin;
+      let sportMaxPlayerY = sportYPosition;
+
+      // Draw team headers
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        
+        if (sportPlayers.length === 0) {
+          sportStartX += sportColWidth + sportColSpacing;
+          return;
+        }
+
+        const teamColor = team.color.replace('#', '');
+        const r = parseInt(teamColor.substring(0, 2), 16);
+        const g = parseInt(teamColor.substring(2, 4), 16);
+        const b = parseInt(teamColor.substring(4, 6), 16);
+        sportPdf.setFillColor(r, g, b);
+        sportPdf.rect(sportStartX, sportYPosition - 3, sportColWidth, 6, 'F');
+        sportPdf.setDrawColor(150, 150, 150);
+        sportPdf.rect(sportStartX, sportYPosition - 3, sportColWidth, 6, 'S');
+        sportPdf.setTextColor(255, 255, 255);
+        sportPdf.setFontSize(9);
+        sportPdf.setFont('helvetica', 'bold');
+        const teamText = `${team.name} (${team.code})`;
+        sportPdf.text(teamText, sportStartX + sportColWidth / 2, sportYPosition, { align: 'center' });
+        sportPdf.setTextColor(0, 0, 0);
+        
+        sportStartX += sportColWidth + sportColSpacing;
+      });
+      
+      sportYPosition += sportLineHeight + 2;
+
+      // Draw players
+      const sportMaxPlayersCount = Math.max(...TEAM_CARDS.map(team => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        return sportPlayers.length;
+      }));
+
+      for (let playerIndex = 0; playerIndex < sportMaxPlayersCount; playerIndex++) {
+        checkSportNewPage(10);
+        if (sportYPosition + 8 > sportPageHeight - sportMargin) {
+          sportPdf.addPage();
+          sportYPosition = sportMargin + 5;
+        }
+        
+        let currentX = sportMargin;
+        
+        TEAM_CARDS.forEach((team) => {
+          const teamSports = raffleResults[team.id] || {};
+          const sportPlayers = teamSports[sport.id] || [];
+          
+          if (sportPlayers.length === 0) {
+            currentX += sportColWidth + sportColSpacing;
+            return;
+          }
+          
+          sportPdf.setDrawColor(220, 220, 220);
+          sportPdf.rect(currentX, sportYPosition - 4, sportColWidth, 8, 'S');
+          
+          if (playerIndex < sportPlayers.length) {
+            const player = sportPlayers[playerIndex];
+            const empCode = player.employeeCode ? ` [${player.employeeCode}]` : '';
+            const playerText = `${playerIndex + 1}. ${player.name}${empCode}`;
+            const deptText = player.department || '';
+            
+            sportPdf.setFontSize(8);
+            sportPdf.setFont('helvetica', 'normal');
+            
+            const maxWidth = sportColWidth - (sportCellPadding * 2);
+            const lines = sportPdf.splitTextToSize(playerText, maxWidth);
+            sportPdf.text(lines[0], currentX + sportCellPadding, sportYPosition);
+            
+            if (deptText) {
+              sportPdf.setFontSize(7);
+              sportPdf.setTextColor(100, 100, 100);
+              const deptLines = sportPdf.splitTextToSize(deptText, maxWidth);
+              sportPdf.text(deptLines[0], currentX + sportCellPadding, sportYPosition + 3.5);
+              sportPdf.setTextColor(0, 0, 0);
+            }
+          }
+          
+          currentX += sportColWidth + sportColSpacing;
+        });
+        
+        sportYPosition += 8;
+        sportMaxPlayerY = Math.max(sportMaxPlayerY, sportYPosition);
+      }
+
+      // Summary for this sport
+      checkSportNewPage(25);
+      sportYPosition += 3;
+      sportPdf.setFillColor(182, 203, 47);
+      sportPdf.rect(sportMargin, sportYPosition - 4, sportPageWidth - (sportMargin * 2), 7, 'F');
+      sportPdf.setDrawColor(150, 150, 150);
+      sportPdf.rect(sportMargin, sportYPosition - 4, sportPageWidth - (sportMargin * 2), 7, 'S');
+      sportPdf.setTextColor(255, 255, 255);
+      sportPdf.setFontSize(11);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text('SUMMARY', sportMargin + 5, sportYPosition);
+      sportYPosition += sportLineHeight + 4;
+      
+      sportPdf.setTextColor(0, 0, 0);
+      sportPdf.setFontSize(10);
+      sportPdf.setFont('helvetica', 'normal');
+      
+      let sportTotalPlayers = 0;
+      TEAM_CARDS.forEach((team) => {
+        const teamSports = raffleResults[team.id] || {};
+        const sportPlayers = teamSports[sport.id] || [];
+        sportTotalPlayers += sportPlayers.length;
+      });
+      
+      sportPdf.text(`Total Players Selected:`, sportMargin + 5, sportYPosition);
+      sportPdf.setFont('helvetica', 'bold');
+      sportPdf.text(`${sportTotalPlayers}`, sportMargin + 55, sportYPosition);
+
+      // Save sport-specific PDF
+      const sportFilename = `RSL_Raffle_${sport.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      sportPdf.save(sportFilename);
+    });
+  };
+
   const renderModeSelection = () => {
     return (
       <motion.div 
@@ -1897,13 +2386,25 @@ function App() {
                           style={{ 
                             opacity: (resultsSaved || savingResults || Object.keys(raffleResults).length === 0) ? 0.6 : 1,
                             cursor: (resultsSaved || savingResults || Object.keys(raffleResults).length === 0) ? 'not-allowed' : 'pointer',
-                            backgroundColor: resultsSaved ? '#4caf50' : '#b6cb2f'
+                            backgroundColor: resultsSaved ? '#4caf50' : '#b6cb2f',
+                            color: '#1a1a1a',
+                            fontWeight: '600'
                           }}
                         >
                           <span style={{ fontSize: '20px', marginRight: '8px' }}>
                             {resultsSaved ? '✅' : savingResults ? '⏳' : '🔒'}
                           </span>
                           {resultsSaved ? 'Results Saved' : savingResults ? 'Saving...' : 'Fix & Save Results'}
+                        </button>
+                        <button type="button" className="pdf-download-btn" onClick={handleDownloadPDF}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                          </svg>
+                          Download PDF
                         </button>
                         <button type="button" className="pdf-download-btn" onClick={handleDownloadExcel}>
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
