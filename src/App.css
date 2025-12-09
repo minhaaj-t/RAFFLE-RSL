@@ -715,6 +715,14 @@ h2 {
   line-height: 1.2;
 }
 
+.sport-card-count {
+  font-size: clamp(0.7rem, 1.5vw, 0.8rem);
+  color: var(--text-secondary);
+  margin-top: 4px;
+  opacity: 0.8;
+  font-weight: 400;
+}
+
 .sport-card-arrow {
   font-size: clamp(1.2rem, 2.5vw, 1.5rem);
   color: var(--accent-color);

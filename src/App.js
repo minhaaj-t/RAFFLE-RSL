@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
-import bannerImage from './assets/images/banner.png';
 import './App.css';
+
+// Banner images from public folder
+const getBannerImage = (phase) => {
+  return phase === 'mode-selection' ? '/banner.png' : '/sports_banner.png';
+};
 
 const TEAM_CARDS = [
   {
@@ -135,57 +139,204 @@ function App() {
     return savedTheme || 'dark';
   });
   const [loadingPlayers, setLoadingPlayers] = useState(true);
+  const [resultsSaved, setResultsSaved] = useState(false); // Track if results are saved to database
+  const [savingResults, setSavingResults] = useState(false); // Track if currently saving
   const pdfButtonRef = useRef(null);
   const resultRefs = useRef({}); // Store refs for each player card
 
-  // Fetch players from API
-  useEffect(() => {
-    const fetchPlayers = async () => {
-      try {
-        setLoadingPlayers(true);
-        // Use environment variable for API URL, fallback based on environment
-        // In production (Vercel), use relative path /api
-        // In development, use localhost:5000
-        const apiUrl = process.env.REACT_APP_API_URL || 
-          (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
-        const response = await fetch(`${apiUrl}/employees`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.details || `Server error: ${response.status}`);
+  // Calculate registered players per sport
+  const registeredPlayersBySport = useMemo(() => {
+    const sportKeyMap = {
+      'cricket': 'cricket',
+      'football': 'football',
+      'badminton': 'badminton',
+      'volleyball': 'volleyball',
+      'tug': 'tug',
+      'race': 'race',
+      'relay': 'relay'
+    };
+    
+    const counts = {};
+    SPORTS_CONFIG.forEach((sport) => {
+      const sportKey = sportKeyMap[sport.id] || sport.id;
+      const registered = playerPool.filter(player => {
+        const sportPrefs = player.sportsPreferences?.[sportKey];
+        if (!sportPrefs) return false;
+        const priority = sportPrefs.priority || 0;
+        const interest = sportPrefs.interest || '';
+        return priority > 0 || 
+               (interest && 
+                interest.trim() !== '' &&
+                interest.toLowerCase() !== 'not specified' &&
+                interest.toLowerCase() !== 'none' &&
+                interest.toLowerCase() !== 'null');
+      });
+      counts[sport.id] = registered;
+    });
+    return counts;
+  }, [playerPool]);
+
+  // Fetch players from API - extracted to allow manual refresh
+  const fetchPlayers = async () => {
+    try {
+      setLoadingPlayers(true);
+      // Use environment variable for API URL, fallback based on environment
+      // In production (Vercel), use relative path /api
+      // In development, use localhost:5000
+      const apiUrl = process.env.REACT_APP_API_URL || 
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      // Add timestamp to prevent caching and ensure fresh data
+      const timestamp = new Date().getTime();
+      const response = await fetch(`${apiUrl}/employees?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          // Log sample data to check sports preferences
-          console.log('Fetched players:', data.length);
-          if (data.length > 0) {
-            console.log('Sample player:', {
-              name: data[0].name,
-              sportsPreferences: data[0].sportsPreferences,
-              registeredSportsCount: data[0].registeredSportsCount
-            });
-            
-            // Count players with sports registrations
-            const withRegistrations = data.filter(p => p.registeredSportsCount > 0).length;
-            console.log(`Players with sports registrations: ${withRegistrations} out of ${data.length}`);
-          }
-          
-          setPlayerPool(data);
-          setShuffledPlayers(data);
-        } else {
-          console.warn('No employees found in database');
-          setPlayerPool([]);
-          setShuffledPlayers([]);
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || `Server error: ${response.status}`);
+      }
+      const responseData = await response.json();
+      // Handle both old format (array) and new format (object with employees array)
+      const data = Array.isArray(responseData) ? responseData : (responseData.employees || []);
+      if (Array.isArray(data) && data.length > 0) {
+        // Log fetch info with timestamp
+        const fetchTime = responseData.timestamp || new Date().toISOString();
+        console.log(`✅ Fetched ${data.length} players at ${new Date(fetchTime).toLocaleString()}`);
+        
+        // Count players with sports registrations
+        const withRegistrations = data.filter(p => p.registeredSportsCount > 0).length;
+        console.log(`📊 Players with sports registrations: ${withRegistrations} out of ${data.length}`);
+        
+        // Count cricket players specifically
+        const cricketPlayers = data.filter(p => {
+          const cricketPref = p.sportsPreferences?.cricket;
+          return cricketPref && (cricketPref.priority > 0 || 
+            (cricketPref.interest && cricketPref.interest.toLowerCase() !== 'not specified'));
+        });
+        console.log(`🏏 Cricket players found: ${cricketPlayers.length}`);
+        if (responseData.cricketCount) {
+          console.log(`🏏 Server reported cricket count: ${responseData.cricketCount}`);
         }
-        setLoadingPlayers(false);
-      } catch (error) {
-        console.error('Error fetching players:', error);
-        setLoadingPlayers(false);
-        // Fallback to empty array if API fails
+        
+        setPlayerPool(data);
+        setShuffledPlayers(data);
+      } else {
+        console.warn('⚠️ No employees found in database');
         setPlayerPool([]);
         setShuffledPlayers([]);
       }
-    };
+      setLoadingPlayers(false);
+    } catch (error) {
+      console.error('❌ Error fetching players:', error);
+      setLoadingPlayers(false);
+      // Fallback to empty array if API fails
+      setPlayerPool([]);
+      setShuffledPlayers([]);
+    }
+  };
 
+  // Save raffle results to database
+  const saveRaffleResults = async (sportId, results) => {
+    try {
+      setSavingResults(true);
+      const apiUrl = process.env.REACT_APP_API_URL || 
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      
+      const response = await fetch(`${apiUrl}/raffle-results`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sportId: sportId,
+          raffleResults: results,
+          raffleDate: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || `Server error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`✅ Saved raffle results for ${sportId}:`, data.message);
+      setSavingResults(false);
+      return data;
+    } catch (error) {
+      console.error(`❌ Error saving raffle results for ${sportId}:`, error);
+      setSavingResults(false);
+      alert(`Error saving raffle results: ${error.message}`);
+      return null;
+    }
+  };
+
+  // Handle Fix button click - Save all raffle results to database
+  const handleFixResults = async () => {
+    if (Object.keys(raffleResults).length === 0) {
+      alert('No raffle results to save');
+      return;
+    }
+
+    setSavingResults(true);
+    
+    if (phase === 'sport-raffle' && selectedSport) {
+      // Save single sport results
+      const sportResults = {};
+      TEAM_CARDS.forEach((team) => {
+        if (raffleResults[team.id] && raffleResults[team.id][selectedSport.id]) {
+          sportResults[team.id] = raffleResults[team.id][selectedSport.id];
+        }
+      });
+      
+      if (Object.keys(sportResults).length > 0) {
+        const result = await saveRaffleResults(selectedSport.id, sportResults);
+        if (result) {
+          setResultsSaved(true);
+          alert(`✅ Raffle results for ${selectedSport.name} have been saved successfully!`);
+        }
+      }
+    } else {
+      // Save all sports results
+      let savedCount = 0;
+      let failedCount = 0;
+      
+      for (const sport of SPORTS_CONFIG) {
+        const sportResults = {};
+        TEAM_CARDS.forEach((team) => {
+          if (raffleResults[team.id] && raffleResults[team.id][sport.id]) {
+            sportResults[team.id] = raffleResults[team.id][sport.id];
+          }
+        });
+        
+        if (Object.keys(sportResults).length > 0) {
+          const result = await saveRaffleResults(sport.id, sportResults);
+          if (result) {
+            savedCount++;
+          } else {
+            failedCount++;
+          }
+        }
+      }
+      
+      if (savedCount > 0 && failedCount === 0) {
+        setResultsSaved(true);
+        alert(`✅ All raffle results (${savedCount} sports) have been saved successfully!`);
+      } else if (savedCount > 0) {
+        alert(`⚠️ Saved ${savedCount} sports, but ${failedCount} failed. Please try again.`);
+      } else {
+        alert('❌ Failed to save raffle results. Please try again.');
+      }
+    }
+    
+    setSavingResults(false);
+  };
+
+  // Fetch players on component mount
+  useEffect(() => {
     fetchPlayers();
   }, []);
 
@@ -232,7 +383,7 @@ function App() {
       playSound(600, 0.2, 'sine', 0.5);
       
       if (phase === 'raffle') {
-        // All Sports Raffle - Distribute ALL registered players across all sports (each player in one sport only)
+        // All Sports Raffle - Include ALL registered players for EACH sport they registered for
         const totalTeams = TEAM_CARDS.length; // 4 teams
         
         const results = {};
@@ -249,80 +400,24 @@ function App() {
           'relay': 'relay'
         };
         
-        // Create a map of all players with their preferences for all sports
-        const allPlayersWithPreferences = playerPool.map(player => {
-          const prefs = player.sportsPreferences || {};
-          const sportScores = {};
-          
-          SPORTS_CONFIG.forEach((sport) => {
-            const sportKey = sportKeyMap[sport.id] || sport.id;
-            const sportPrefs = prefs[sportKey] || {};
-            const priority = sportPrefs.priority || 0;
-            const interest = sportPrefs.interest || 'Not specified';
-            
-            // Check if player has registered for this sport
-            const hasRegistered = priority > 0 || 
-                                 (interest && 
-                                  interest.trim() !== '' &&
-                                  interest.toLowerCase() !== 'not specified' &&
-                                  interest.toLowerCase() !== 'none' &&
-                                  interest.toLowerCase() !== 'null');
-            
-            // Calculate score: priority (0-3) + interest bonus
-            // Only calculate score if player has registered
-            let score = hasRegistered ? priority : -999;
-            if (hasRegistered && interest && typeof interest === 'string') {
-              const interestLower = interest.toLowerCase();
-              if (interestLower.includes('high') || interestLower.includes('very')) {
-                score += 2;
-              } else if (interestLower.includes('medium') || interestLower.includes('moderate')) {
-                score += 1;
-              } else if (interestLower.includes('low') || interestLower.includes('no')) {
-                score -= 1;
-              }
-            }
-            
-            sportScores[sport.id] = {
-              score: score,
-              priority: priority,
-              interest: interest,
-              hasRegistered: hasRegistered
-            };
-          });
-          
-          return {
-            ...player,
-            sportScores: sportScores
-          };
-        });
-        
-        // Assign each player to their best sport (highest score, only if they registered)
+        // Get registered players for each sport (players can be in multiple sports)
         const playersBySport = {};
         SPORTS_CONFIG.forEach((sport) => {
-          playersBySport[sport.id] = [];
-        });
-        
-        allPlayersWithPreferences.forEach(player => {
-          // Find the sport with highest score for this player (only registered sports)
-          let bestSport = null;
-          let bestScore = -999;
-          
-          SPORTS_CONFIG.forEach((sport) => {
-            const sportData = player.sportScores[sport.id];
-            if (sportData && sportData.hasRegistered && sportData.score > bestScore) {
-              bestScore = sportData.score;
-              bestSport = sport.id;
-            }
+          const sportKey = sportKeyMap[sport.id] || sport.id;
+          // Get ALL players who registered for this sport
+          const registered = playerPool.filter(player => {
+            const sportPrefs = player.sportsPreferences?.[sportKey];
+            if (!sportPrefs) return false;
+            const priority = sportPrefs.priority || 0;
+            const interest = sportPrefs.interest || '';
+            return priority > 0 || 
+                   (interest && 
+                    interest.trim() !== '' &&
+                    interest.toLowerCase() !== 'not specified' &&
+                    interest.toLowerCase() !== 'none' &&
+                    interest.toLowerCase() !== 'null');
           });
-          
-          // If player has registered for at least one sport, assign them
-          // Otherwise, assign to first sport as fallback
-          if (bestSport) {
-            playersBySport[bestSport].push(player);
-          } else {
-            // If no registration found, assign to first sport (fallback)
-            playersBySport[SPORTS_CONFIG[0].id].push(player);
-          }
+          playersBySport[sport.id] = registered;
         });
         
         // Now distribute players for each sport across teams, balancing interest categories
@@ -418,6 +513,7 @@ function App() {
         setRaffleResults(results);
         setRevealedPlayers(revealed);
         setIsRaffling(false);
+        setResultsSaved(false); // Reset saved status when new raffle starts
       } else if (phase === 'sport-raffle' && selectedSport) {
         // Sport-by-Sport Raffle - Only use players who have registered/expressed interest in this sport
         const totalTeams = TEAM_CARDS.length; // 4 teams
@@ -589,6 +685,7 @@ function App() {
         setRaffleResults(results);
         setRevealedPlayers(revealed);
         setIsRaffling(false);
+        setResultsSaved(false); // Reset saved status when new raffle starts
       }
     }
   }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool]);
@@ -872,6 +969,7 @@ function App() {
     setHasStartedRaffle(false);
     setIsRaffling(false);
     setCountdown(0);
+    setResultsSaved(false);
   };
 
   const handleBackToSportSelection = () => {
@@ -882,6 +980,7 @@ function App() {
     setHasStartedRaffle(false);
     setIsRaffling(false);
     setCountdown(0);
+    setResultsSaved(false);
   };
 
   const handleNextSport = () => {
@@ -1332,7 +1431,7 @@ function App() {
               >
                 <h4 className="mode-card-title">All Sports Raffle</h4>
                 <p className="mode-card-description">
-                  Distribute all players across all teams and all sports in one raffle
+                  Distribute all registered players across all teams and all sports in one raffle
                 </p>
                 <div className="mode-card-arrow">→</div>
               </motion.button>
@@ -1390,6 +1489,9 @@ function App() {
                 >
                   <div className="sport-card-emoji">{sport.emoji}</div>
                   <div className="sport-card-name">{sport.name}</div>
+                  <div className="sport-card-count">
+                    {registeredPlayersBySport[sport.id]?.length || 0} registered
+                  </div>
                   <div className="sport-card-arrow">→</div>
                 </motion.button>
               ))}
@@ -1429,7 +1531,31 @@ function App() {
               ) : (
                 <>
                   <p>
-                    Ready to spin {playerPool.length} names and distribute them across all teams and all sports. Click start to begin the raffle.
+                    {phase === 'raffle' ? (
+                      <>
+                        Ready to distribute registered players across all teams and all sports.
+                        <br />
+                        <small style={{ fontSize: '0.9em', opacity: 0.8, marginTop: '0.5em', display: 'block' }}>
+                          {Object.entries(registeredPlayersBySport).map(([sportId, players]) => {
+                            const sport = SPORTS_CONFIG.find(s => s.id === sportId);
+                            return players.length > 0 ? (
+                              <span key={sportId} style={{ marginRight: '1em' }}>
+                                {sport?.emoji} {sport?.name}: {players.length} players
+                              </span>
+                            ) : null;
+                          })}
+                        </small>
+                      </>
+                    ) : selectedSport ? (
+                      <>
+                        Ready to raffle <strong>{selectedSport.name}</strong> with{' '}
+                        <strong>{registeredPlayersBySport[selectedSport.id]?.length || 0} registered players</strong>.
+                        <br />
+                        Click start to distribute them across all teams.
+                      </>
+                    ) : (
+                      `Ready to spin ${playerPool.length} names and distribute them across all teams and all sports.`
+                    )}
                   </p>
                   <motion.button 
                     type="button" 
@@ -1762,16 +1888,34 @@ function App() {
                   
                   {Object.keys(raffleResults).length > 0 && (
                     <div className="pdf-download-section" ref={pdfButtonRef}>
-                      <button type="button" className="pdf-download-btn" onClick={handleDownloadExcel}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                          <polyline points="10 9 9 9 8 9" />
-                        </svg>
-                        Download Excel
-                      </button>
+                      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+                        <button 
+                          type="button" 
+                          className="pdf-download-btn" 
+                          onClick={handleFixResults}
+                          disabled={resultsSaved || savingResults || Object.keys(raffleResults).length === 0}
+                          style={{ 
+                            opacity: (resultsSaved || savingResults || Object.keys(raffleResults).length === 0) ? 0.6 : 1,
+                            cursor: (resultsSaved || savingResults || Object.keys(raffleResults).length === 0) ? 'not-allowed' : 'pointer',
+                            backgroundColor: resultsSaved ? '#4caf50' : '#b6cb2f'
+                          }}
+                        >
+                          <span style={{ fontSize: '20px', marginRight: '8px' }}>
+                            {resultsSaved ? '✅' : savingResults ? '⏳' : '🔒'}
+                          </span>
+                          {resultsSaved ? 'Results Saved' : savingResults ? 'Saving...' : 'Fix & Save Results'}
+                        </button>
+                        <button type="button" className="pdf-download-btn" onClick={handleDownloadExcel}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
+                          </svg>
+                          Download Excel
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
@@ -1793,33 +1937,12 @@ function App() {
       >
         {theme === 'dark' ? '☀️' : '🌙'}
       </button>
-      <div className="banner-container">
-        <img src={bannerImage} alt="RSL Raffle Banner" className="banner-image" />
-        <div className="banner-lighting" />
-      </div>
+        <div className="banner-container">
+          <img src={getBannerImage(phase)} alt="RSL Raffle Banner" className="banner-image" />
+          <div className="banner-lighting" />
+        </div>
       <main className="content">
         <header>
-          <motion.div 
-            className="header-decoration"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1 }}
-          >
-            <motion.span 
-              className="header-emoji header-emoji-center"
-              animate={{ 
-                y: [0, -15, 0],
-                rotate: [0, 10, -10, 0]
-              }}
-              transition={{ 
-                duration: 3,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            >
-              🏆
-            </motion.span>
-          </motion.div>
           <p className="eyebrow">
             🏁 RSL Raffle • {loadingPlayers ? 'Loading...' : `${playerPool.length} participants`}
           </p>
@@ -1831,7 +1954,24 @@ function App() {
             Team Member Sports Raffle
           </motion.h1>
           <p className="lede">
-            Click start to randomly distribute {loadingPlayers ? 'players' : `${playerPool.length} players`} across all teams and all sports.
+            {loadingPlayers ? (
+              'Loading players...'
+            ) : (
+              <>
+                Click start to randomly distribute registered players across all teams and all sports.
+                <br />
+                <small style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '0.5em', display: 'block' }}>
+                  {Object.entries(registeredPlayersBySport).map(([sportId, players]) => {
+                    const sport = SPORTS_CONFIG.find(s => s.id === sportId);
+                    return players.length > 0 ? (
+                      <span key={sportId} style={{ marginRight: '1em' }}>
+                        {sport?.emoji} {sport?.name}: {players.length}
+                      </span>
+                    ) : null;
+                  })}
+                </small>
+              </>
+            )}
           </p>
         </header>
 

@@ -7,7 +7,9 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Increase body parser limit to handle large raffle results (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // MySQL Connection Pool (better for handling connections)
 const db = mysql.createPool({
@@ -21,7 +23,7 @@ const db = mysql.createPool({
   queueLimit: 0
 });
 
-// Test connection
+// Test connection and create raffle_results table if it doesn't exist
 db.getConnection((err, connection) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
@@ -30,7 +32,36 @@ db.getConnection((err, connection) => {
     return;
   }
   console.log('Connected to MySQL database');
-  connection.release();
+  
+  // Create raffle_results table if it doesn't exist
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS raffle_results (
+      raffle_id INT AUTO_INCREMENT PRIMARY KEY,
+      sport_id VARCHAR(50) NOT NULL COMMENT 'Sport identifier (cricket, football, badminton, etc.)',
+      team_id VARCHAR(50) NOT NULL COMMENT 'Team identifier (royals, sparks, kings, stars)',
+      player_id INT NOT NULL COMMENT 'Employee registration ID from employee_registrations table',
+      player_name VARCHAR(255) NOT NULL COMMENT 'Player name',
+      player_department VARCHAR(255) COMMENT 'Player department/designation',
+      player_code VARCHAR(50) COMMENT 'Employee code',
+      player_working_branch VARCHAR(255) COMMENT 'Working branch',
+      player_division VARCHAR(255) COMMENT 'Division',
+      raffle_date DATETIME NOT NULL COMMENT 'Date and time of raffle',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation timestamp',
+      INDEX idx_sport (sport_id),
+      INDEX idx_team (team_id),
+      INDEX idx_player (player_id),
+      INDEX idx_raffle_date (raffle_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Stores raffle results for each sport and team'
+  `;
+  
+  connection.query(createTableQuery, (err) => {
+    if (err) {
+      console.error('Error creating raffle_results table:', err);
+    } else {
+      console.log('✅ raffle_results table ready');
+    }
+    connection.release();
+  });
 });
 
 // API endpoint to get table structure
@@ -52,10 +83,14 @@ app.get('/api/table-structure', (req, res) => {
 
 // API endpoint to get all employees with sports preferences
 app.get('/api/employees', (req, res) => {
+  // Set headers to prevent caching and ensure fresh data
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
   // Select all columns from employee_registrations table
-  // Try multiple approaches to get the data
-  // First, try with played_season_two filter
-  let query = `
+  // Fetch ALL employees regardless of played_season_two to get complete data
+  const query = `
     SELECT 
       reg_id,
       employee_code,
@@ -82,54 +117,10 @@ app.get('/api/employees', (req, res) => {
       relay_priority,
       relay_interest
     FROM employee_registrations 
-    WHERE played_season_two = 1
   `;
   
   db.query(query, (err, results) => {
-    // If no results with filter, try without filter
-    if ((!results || results.length === 0) && !err) {
-      console.log('No results with played_season_two = 1, trying without filter...');
-      query = `
-        SELECT 
-          reg_id,
-          employee_code,
-          employee_name,
-          designation,
-          working_branch,
-          division,
-          mobile,
-          email,
-          played_season_two,
-          sports_json,
-          cricket_priority,
-          cricket_interest,
-          football_priority,
-          football_interest,
-          badminton_priority,
-          badminton_interest,
-          volleyball_priority,
-          volleyball_interest,
-          tag_of_war_priority,
-          tag_of_war_interest,
-          hundred_meter_priority,
-          hundred_meter_interest,
-          relay_priority,
-          relay_interest
-        FROM employee_registrations
-      `;
-      
-      db.query(query, (err2, results2) => {
-        if (err2) {
-          console.error('Error fetching employees (without filter):', err2);
-          return res.status(500).json({ 
-            error: 'Failed to fetch employees',
-            details: err2.message,
-            code: err2.code
-          });
-        }
-        processResults(results2, res);
-      });
-    } else if (err) {
+    if (err) {
       console.error('Error fetching employees:', err);
       console.error('Error code:', err.code);
       console.error('Error message:', err.message);
@@ -138,21 +129,14 @@ app.get('/api/employees', (req, res) => {
         details: err.message,
         code: err.code
       });
-    } else {
-      processResults(results, res);
     }
+    processResults(results, res);
   });
   
   function processResults(results, res) {
     if (!results || results.length === 0) {
       console.log('No employees found in database');
       return res.json([]);
-    }
-    
-    // Log first row to see available columns
-    if (results.length > 0) {
-      console.log('Sample row columns:', Object.keys(results[0]));
-      console.log('Sample row data:', JSON.stringify(results[0], null, 2));
     }
     
     // Transform results to match frontend format with sports preferences
@@ -221,20 +205,30 @@ app.get('/api/employees', (req, res) => {
       };
     });
     
-    // Log statistics
-    const withSportsReg = employees.filter(emp => emp.registeredSportsCount > 0).length;
-    console.log(`Fetched ${employees.length} employees from employee_registrations table`);
-    console.log(`Employees with sports registration: ${withSportsReg}`);
-    console.log(`Employees without sports registration: ${employees.length - withSportsReg}`);
+    // Count cricket players specifically
+    const cricketPlayers = employees.filter(emp => {
+      const cricketPref = emp.sportsPreferences?.cricket;
+      return cricketPref && (cricketPref.priority > 0 || 
+        (cricketPref.interest && cricketPref.interest.toLowerCase() !== 'not specified'));
+    });
     
-    res.json(employees);
+    console.log(`📊 Total employees: ${employees.length}`);
+    console.log(`🏏 Cricket players: ${cricketPlayers.length}`);
+    
+    // Add timestamp to response to indicate when data was fetched
+    res.json({
+      employees: employees,
+      timestamp: new Date().toISOString(),
+      count: employees.length,
+      cricketCount: cricketPlayers.length
+    });
   }
 });
 
 // API endpoint to get complete employee data with all columns
 app.get('/api/employees/full', (req, res) => {
-  // Try with filter first
-  let query = `SELECT * FROM employee_registrations WHERE played_season_two = 1`;
+  // Fetch ALL employees without filter
+  const query = `SELECT * FROM employee_registrations`;
   
   db.query(query, (err, results) => {
     if (err) {
@@ -246,26 +240,7 @@ app.get('/api/employees/full', (req, res) => {
       });
     }
     
-    // If no results, try without filter
-    if (!results || results.length === 0) {
-      console.log('No results with filter, trying without filter...');
-      query = `SELECT * FROM employee_registrations`;
-      
-      db.query(query, (err2, results2) => {
-        if (err2) {
-          return res.status(500).json({ 
-            error: 'Failed to fetch employee data',
-            details: err2.message,
-            code: err2.code
-          });
-        }
-        console.log(`Fetched ${results2.length} complete employee records (without filter)`);
-        res.json(results2);
-      });
-    } else {
-      console.log(`Fetched ${results.length} complete employee records (with filter)`);
       res.json(results);
-    }
   });
 });
 
@@ -335,6 +310,117 @@ app.get('/api/test-data', (req, res) => {
           });
         });
       });
+    });
+  });
+});
+
+// API endpoint to save raffle results
+app.post('/api/raffle-results', (req, res) => {
+  const { sportId, raffleResults, raffleDate } = req.body;
+  
+  if (!sportId || !raffleResults) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: sportId and raffleResults are required' 
+    });
+  }
+  
+  // raffleResults structure: { teamId: [players] }
+  // Each player has: id, name, department, employeeCode, workingBranch, division
+  
+  const raffleDateTime = raffleDate || new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const insertQueries = [];
+  const values = [];
+  
+  // Prepare insert statements for each team and player
+  Object.keys(raffleResults).forEach(teamId => {
+    const players = raffleResults[teamId];
+    if (Array.isArray(players)) {
+      players.forEach(player => {
+        values.push([
+          sportId,
+          teamId,
+          player.id || player.player_id,
+          player.name || player.player_name || '',
+          player.department || player.player_department || '',
+          player.employeeCode || player.player_code || '',
+          player.workingBranch || player.player_working_branch || '',
+          player.division || player.player_division || '',
+          raffleDateTime
+        ]);
+      });
+    }
+  });
+  
+  if (values.length === 0) {
+    return res.status(400).json({ 
+      error: 'No players to save in raffle results' 
+    });
+  }
+  
+  // Insert all raffle results in a single transaction
+  const insertQuery = `
+    INSERT INTO raffle_results 
+    (sport_id, team_id, player_id, player_name, player_department, player_code, player_working_branch, player_division, raffle_date)
+    VALUES ?
+  `;
+  
+  db.query(insertQuery, [values], (err, results) => {
+    if (err) {
+      console.error('Error saving raffle results:', err);
+      return res.status(500).json({ 
+        error: 'Failed to save raffle results',
+        details: err.message,
+        code: err.code
+      });
+    }
+    
+    console.log(`✅ Saved ${results.affectedRows} raffle results for sport: ${sportId}`);
+    res.json({ 
+      success: true,
+      message: `Successfully saved ${results.affectedRows} raffle results`,
+      insertedRows: results.affectedRows,
+      sportId: sportId
+    });
+  });
+});
+
+// API endpoint to get raffle results
+app.get('/api/raffle-results', (req, res) => {
+  const { sportId, teamId, raffleDate } = req.query;
+  
+  let query = 'SELECT * FROM raffle_results WHERE 1=1';
+  const queryParams = [];
+  
+  if (sportId) {
+    query += ' AND sport_id = ?';
+    queryParams.push(sportId);
+  }
+  
+  if (teamId) {
+    query += ' AND team_id = ?';
+    queryParams.push(teamId);
+  }
+  
+  if (raffleDate) {
+    query += ' AND DATE(raffle_date) = ?';
+    queryParams.push(raffleDate);
+  }
+  
+  query += ' ORDER BY raffle_date DESC, team_id, player_name';
+  
+  db.query(query, queryParams, (err, results) => {
+    if (err) {
+      console.error('Error fetching raffle results:', err);
+      return res.status(500).json({ 
+        error: 'Failed to fetch raffle results',
+        details: err.message,
+        code: err.code
+      });
+    }
+    
+    res.json({
+      results: results,
+      count: results.length
     });
   });
 });
