@@ -105,8 +105,13 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // First, try with played_season_two filter
-    let query = `
+    // Set headers to prevent caching and ensure fresh data
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // Fetch ALL employees regardless of played_season_two to get complete data
+    const query = `
       SELECT 
         reg_id,
         employee_code,
@@ -132,55 +137,30 @@ module.exports = async (req, res) => {
         hundred_meter_interest,
         relay_priority,
         relay_interest
-      FROM employee_registrations 
-      WHERE played_season_two = 1
+      FROM employee_registrations
     `;
     
-    let [results] = await db.query(query);
-    
-    // If no results with filter, try without filter
-    if (!results || results.length === 0) {
-      console.log('No results with played_season_two = 1, trying without filter...');
-      query = `
-        SELECT 
-          reg_id,
-          employee_code,
-          employee_name,
-          designation,
-          working_branch,
-          division,
-          mobile,
-          email,
-          played_season_two,
-          sports_json,
-          cricket_priority,
-          cricket_interest,
-          football_priority,
-          football_interest,
-          badminton_priority,
-          badminton_interest,
-          volleyball_priority,
-          volleyball_interest,
-          tag_of_war_priority,
-          tag_of_war_interest,
-          hundred_meter_priority,
-          hundred_meter_interest,
-          relay_priority,
-          relay_interest
-        FROM employee_registrations
-      `;
-      
-      [results] = await db.query(query);
-    }
+    const [results] = await db.query(query);
     
     const employees = processResults(results);
     
-    // Log statistics
-    const withSportsReg = employees.filter(emp => emp.registeredSportsCount > 0).length;
-    console.log(`Fetched ${employees.length} employees from employee_registrations table`);
-    console.log(`Employees with sports registration: ${withSportsReg}`);
+    // Count cricket players specifically
+    const cricketPlayers = employees.filter(emp => {
+      const cricketPref = emp.sportsPreferences?.cricket;
+      return cricketPref && (cricketPref.priority > 0 || 
+        (cricketPref.interest && cricketPref.interest.toLowerCase() !== 'not specified'));
+    });
     
-    res.status(200).json(employees);
+    console.log(`📊 Total employees: ${employees.length}`);
+    console.log(`🏏 Cricket players: ${cricketPlayers.length}`);
+    
+    // Return response with timestamp and cricket count (matching server.js format)
+    res.status(200).json({
+      employees: employees,
+      timestamp: new Date().toISOString(),
+      count: employees.length,
+      cricketCount: cricketPlayers.length
+    });
   } catch (error) {
     console.error('Error fetching employees:', error);
     console.error('Error code:', error.code);
