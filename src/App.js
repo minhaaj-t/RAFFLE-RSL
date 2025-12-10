@@ -1047,7 +1047,14 @@ function App() {
         
         // Debug logging for Relay
         if (selectedSport.id === 'relay') {
-          console.log(`🏃‍♂️ Relay: Players with preferences (after filtering) = ${playersWithPreferences.length}`);
+          console.log(`🏃‍♂️ Relay (Sport-by-Sport): Players with preferences (after filtering) = ${playersWithPreferences.length}`);
+          console.log(`🏃‍♂️ Relay (Sport-by-Sport): Total teams = ${totalTeams}`);
+          if (playersWithPreferences.length < totalTeams) {
+            console.warn(`🏃‍♂️ Relay (Sport-by-Sport): WARNING - Only ${playersWithPreferences.length} players available, but need ${totalTeams} for 1 per team`);
+            console.warn(`🏃‍♂️ Relay (Sport-by-Sport): Cannot guarantee 1 per team with fewer players than teams`);
+          } else {
+            console.log(`🏃‍♂️ Relay (Sport-by-Sport): Sufficient players (${playersWithPreferences.length}) to ensure 1 per team`);
+          }
         }
         
         // If no players registered for this sport, show empty results
