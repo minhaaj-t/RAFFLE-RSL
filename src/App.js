@@ -52,9 +52,15 @@ const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, to
   // For Relay sport, ensure minimum 1 player per team if we have enough players
   const isRelay = sportId === 'relay';
   
+  // Debug logging for Relay
+  if (isRelay) {
+    console.log(`🏃‍♂️ Relay distribution: totalPlayers=${totalPlayers}, totalTeams=${totalTeams}`);
+  }
+  
   // If Relay and we have fewer players than teams, we can't guarantee 1 per team
   // But if we have at least as many players as teams, ensure minimum distribution
   if (isRelay && totalPlayers >= totalTeams) {
+    console.log(`🏃‍♂️ Using Relay-specific distribution (ensuring min 1 per team)`);
     // First pass: ensure minimum 1 player per team
     const allPlayersFlat = [];
     Object.keys(playersByInterest).forEach(interestKey => {
@@ -917,6 +923,12 @@ function App() {
         // Filter players who have registered interest in this sport AND haven't been assigned to THIS sport yet
         // Note: In sport-by-sport mode, players CAN be in multiple sports (unlike All Sports mode)
         // In sport-by-sport mode, allow players to be in multiple sports (not just best sport)
+        
+        // Debug logging for Relay
+        if (selectedSport.id === 'relay') {
+          console.log(`🏃‍♂️ Relay: Total availablePlayers = ${availablePlayers.length}`);
+        }
+        
         const playersWithPreferences = availablePlayers
           .map(player => {
             const prefs = player.sportsPreferences || {};
@@ -971,6 +983,11 @@ function App() {
             
             return !alreadyInThisSport; // Include if not already in this sport
           });
+        
+        // Debug logging for Relay
+        if (selectedSport.id === 'relay') {
+          console.log(`🏃‍♂️ Relay: Players with preferences (after filtering) = ${playersWithPreferences.length}`);
+        }
         
         // If no players registered for this sport, show empty results
         if (playersWithPreferences.length === 0) {
@@ -1041,11 +1058,27 @@ function App() {
         // Use balanced distribution to ensure equal totals and equal interest distribution
         distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS, selectedSport.id);
         
+        // Debug logging for Relay
+        if (selectedSport.id === 'relay') {
+          console.log(`🏃‍♂️ Relay distribution results BEFORE shuffle:`);
+          TEAM_CARDS.forEach((team) => {
+            console.log(`  ${team.name}: ${teamSportArrays[team.id].length} players`);
+          });
+        }
+        
         // Shuffle players within each team for more randomness
         TEAM_CARDS.forEach((team) => {
           results[team.id][selectedSport.id] = shuffleArray(teamSportArrays[team.id]);
           revealed[team.id][selectedSport.id] = 0; // Start with 0 revealed
         });
+        
+        // Debug logging for Relay after assignment
+        if (selectedSport.id === 'relay') {
+          console.log(`🏃‍♂️ Relay distribution results AFTER assignment:`);
+          TEAM_CARDS.forEach((team) => {
+            console.log(`  ${team.name}: ${results[team.id][selectedSport.id].length} players`);
+          });
+        }
         
         setRaffleResults(results);
         setRevealedPlayers(revealed);
