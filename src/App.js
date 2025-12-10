@@ -305,12 +305,15 @@ function App() {
   }, [playerPool]);
 
   // Fetch teams from API
-  const fetchTeams = async () => {
+  const fetchTeams = async (retryCount = 0) => {
+    const maxRetries = 3;
     try {
       setLoadingTeams(true);
       const apiUrl = process.env.REACT_APP_API_URL || 
         (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
       const timestamp = new Date().getTime();
+      console.log(`🔄 Fetching teams from ${apiUrl}/teams (attempt ${retryCount + 1}/${maxRetries + 1})`);
+      
       const response = await fetch(`${apiUrl}/teams?t=${timestamp}`, {
         cache: 'no-store',
         headers: {
@@ -318,24 +321,49 @@ function App() {
           'Pragma': 'no-cache'
         }
       });
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.details || `Server error: ${response.status}`);
+        const errorMessage = errorData.details || errorData.error || `Server error: ${response.status}`;
+        console.error(`❌ Error fetching teams (${response.status}):`, errorMessage);
+        
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retrying teams fetch in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => fetchTeams(retryCount + 1), 2000);
+          return;
+        }
+        throw new Error(errorMessage);
       }
+      
       const responseData = await response.json();
       const teamsData = responseData.teams || [];
+      
       if (Array.isArray(teamsData) && teamsData.length > 0) {
         console.log(`✅ Fetched ${teamsData.length} teams from database`);
         setTeams(teamsData);
+        setLoadingTeams(false);
       } else {
-        console.warn('⚠️ No teams found in database, using default');
+        console.warn('⚠️ No teams found in database');
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retrying teams fetch in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => fetchTeams(retryCount + 1), 2000);
+          return;
+        }
+        console.error('❌ Failed to fetch teams after all retries');
+        setLoadingTeams(false);
+        // Use default teams as fallback
         setTeams(TEAM_CARDS_DEFAULT);
       }
-      setLoadingTeams(false);
     } catch (error) {
       console.error('❌ Error fetching teams:', error);
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Retrying teams fetch in 3 seconds... (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => fetchTeams(retryCount + 1), 3000);
+        return;
+      }
+      console.error('❌ Failed to fetch teams after all retries, using default');
       setLoadingTeams(false);
-      // Fallback to default teams on error
+      // Use default teams as fallback
       setTeams(TEAM_CARDS_DEFAULT);
     }
   };
@@ -1264,7 +1292,18 @@ function App() {
   const handleStartRaffle = async () => {
     // Check if teams are loaded
     if (!teams || teams.length === 0) {
-      alert('⚠️ Teams are not loaded yet. Please wait for teams to load from the database.');
+      if (loadingTeams) {
+        alert('⚠️ Teams are loading. Please wait a moment and try again.');
+      } else {
+        alert('⚠️ Teams are not loaded. Attempting to fetch teams...');
+        await fetchTeams();
+        // Wait a bit and check again
+        setTimeout(() => {
+          if (!teams || teams.length === 0) {
+            alert('⚠️ Unable to load teams from database. Please refresh the page or check your connection.');
+          }
+        }, 2000);
+      }
       return;
     }
     
