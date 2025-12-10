@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
@@ -305,7 +305,7 @@ function App() {
   }, [playerPool]);
 
   // Fetch teams from API
-  const fetchTeams = async (retryCount = 0) => {
+  const fetchTeams = useCallback(async (retryCount = 0) => {
     const maxRetries = 3;
     try {
       setLoadingTeams(true);
@@ -366,10 +366,10 @@ function App() {
       // Use default teams as fallback
       setTeams(TEAM_CARDS_DEFAULT);
     }
-  };
+  }, []); // Empty deps: setState functions are stable
 
   // Fetch players from API - extracted to allow manual refresh
-  const fetchPlayers = async () => {
+  const fetchPlayers = useCallback(async () => {
     try {
       setLoadingPlayers(true);
       // Use environment variable for API URL, fallback based on environment
@@ -428,7 +428,7 @@ function App() {
       setPlayerPool([]);
       setShuffledPlayers([]);
     }
-  };
+  }, []); // Empty deps: setState functions are stable
 
   // Fetch already raffled employee codes from database
   const fetchRaffledEmployeeCodes = async () => {
@@ -586,7 +586,7 @@ function App() {
   useEffect(() => {
     fetchTeams();
     fetchPlayers();
-  }, []);
+  }, [fetchTeams, fetchPlayers]);
 
   // Save theme to localStorage
   useEffect(() => {
