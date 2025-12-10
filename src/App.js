@@ -33,7 +33,7 @@ const shuffleArray = (array) => {
 };
 
 // Balanced distribution function that ensures equal totals and equal interest distribution
-const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, totalTeams, teamArrays, teams) => {
+const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, totalTeams, teamArrays, teams, sportId = null) => {
   // Guard against undefined or empty teams
   if (!teams || teams.length === 0) {
     console.error('⚠️ Teams array is empty or undefined in distributePlayersBalanced');
@@ -43,30 +43,102 @@ const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, to
   // Track interest category for each player
   const playerInterestMap = new Map();
   
-  // First, distribute each interest category using round-robin for perfect balance
-  // Round-robin ensures each team gets equal (or nearly equal) number from each category
+  // Calculate total players
+  let totalPlayers = playersWithoutInterest.length;
   Object.keys(playersByInterest).forEach(interestKey => {
-    const interestPlayers = shuffleArray(playersByInterest[interestKey]);
-    
-    // Round-robin distribution: each team gets players in rotation
-    // This ensures each team gets equal number from each interest category
-    interestPlayers.forEach((player, index) => {
-      const teamIndex = index % totalTeams;
-      const teamId = teams[teamIndex].id;
-      teamArrays[teamId].push(player);
-      playerInterestMap.set(player.id, interestKey);
-    });
+    totalPlayers += playersByInterest[interestKey].length;
   });
   
-  // Distribute players without interest using round-robin
-  if (playersWithoutInterest.length > 0) {
-    const shuffledNoInterest = shuffleArray(playersWithoutInterest);
-    shuffledNoInterest.forEach((player, index) => {
-      const teamIndex = index % totalTeams;
+  // For Relay sport, ensure minimum 1 player per team if we have enough players
+  const isRelay = sportId === 'relay';
+  const minPerTeam = isRelay ? 1 : 0;
+  
+  // If Relay and we have fewer players than teams, we can't guarantee 1 per team
+  // But if we have at least as many players as teams, ensure minimum distribution
+  if (isRelay && totalPlayers >= totalTeams) {
+    // First pass: ensure minimum 1 player per team
+    const allPlayersFlat = [];
+    Object.keys(playersByInterest).forEach(interestKey => {
+      playersByInterest[interestKey].forEach(player => {
+        allPlayersFlat.push({ player, interest: interestKey });
+      });
+    });
+    playersWithoutInterest.forEach(player => {
+      allPlayersFlat.push({ player, interest: 'no-interest' });
+    });
+    
+    const shuffledAll = shuffleArray(allPlayersFlat);
+    let playerIndex = 0;
+    
+    // Assign minimum 1 to each team first
+    for (let teamIndex = 0; teamIndex < totalTeams && playerIndex < shuffledAll.length; teamIndex++) {
+      const { player, interest } = shuffledAll[playerIndex];
       const teamId = teams[teamIndex].id;
       teamArrays[teamId].push(player);
-      playerInterestMap.set(player.id, 'no-interest');
+      playerInterestMap.set(player.id, interest);
+      playerIndex++;
+    }
+    
+    // Remove assigned players from interest groups
+    const assignedPlayerIds = new Set();
+    for (let i = 0; i < playerIndex; i++) {
+      assignedPlayerIds.add(shuffledAll[i].player.id);
+    }
+    
+    // Update interest groups to remove assigned players
+    Object.keys(playersByInterest).forEach(interestKey => {
+      playersByInterest[interestKey] = playersByInterest[interestKey].filter(p => !assignedPlayerIds.has(p.id));
     });
+    const remainingNoInterest = playersWithoutInterest.filter(p => !assignedPlayerIds.has(p.id));
+    
+    // Continue with normal distribution for remaining players
+    Object.keys(playersByInterest).forEach(interestKey => {
+      const interestPlayers = shuffleArray(playersByInterest[interestKey]);
+      interestPlayers.forEach((player, index) => {
+        const teamIndex = (playerIndex + index) % totalTeams;
+        const teamId = teams[teamIndex].id;
+        teamArrays[teamId].push(player);
+        playerInterestMap.set(player.id, interestKey);
+      });
+      playerIndex += interestPlayers.length;
+    });
+    
+    if (remainingNoInterest.length > 0) {
+      const shuffledNoInterest = shuffleArray(remainingNoInterest);
+      shuffledNoInterest.forEach((player, index) => {
+        const teamIndex = (playerIndex + index) % totalTeams;
+        const teamId = teams[teamIndex].id;
+        teamArrays[teamId].push(player);
+        playerInterestMap.set(player.id, 'no-interest');
+      });
+    }
+  } else {
+    // Normal distribution for non-Relay or when we have enough players
+    // First, distribute each interest category using round-robin for perfect balance
+    // Round-robin ensures each team gets equal (or nearly equal) number from each category
+    Object.keys(playersByInterest).forEach(interestKey => {
+      const interestPlayers = shuffleArray(playersByInterest[interestKey]);
+      
+      // Round-robin distribution: each team gets players in rotation
+      // This ensures each team gets equal number from each interest category
+      interestPlayers.forEach((player, index) => {
+        const teamIndex = index % totalTeams;
+        const teamId = teams[teamIndex].id;
+        teamArrays[teamId].push(player);
+        playerInterestMap.set(player.id, interestKey);
+      });
+    });
+    
+    // Distribute players without interest using round-robin
+    if (playersWithoutInterest.length > 0) {
+      const shuffledNoInterest = shuffleArray(playersWithoutInterest);
+      shuffledNoInterest.forEach((player, index) => {
+        const teamIndex = index % totalTeams;
+        const teamId = teams[teamIndex].id;
+        teamArrays[teamId].push(player);
+        playerInterestMap.set(player.id, 'no-interest');
+      });
+    }
   }
   
   // Calculate team counts and interest category counts per team
@@ -810,7 +882,8 @@ function App() {
           });
           
           // Use balanced distribution to ensure equal totals and equal interest distribution
-          distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS);
+          // Pass sportId to ensure Relay gets minimum 1 per team
+          distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS, sport.id);
           
           // Shuffle players within each team for more randomness
           TEAM_CARDS.forEach((team) => {
@@ -967,7 +1040,7 @@ function App() {
         });
         
         // Use balanced distribution to ensure equal totals and equal interest distribution
-        distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS);
+        distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS, selectedSport.id);
         
         // Shuffle players within each team for more randomness
         TEAM_CARDS.forEach((team) => {
