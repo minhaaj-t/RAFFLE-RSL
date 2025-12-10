@@ -51,7 +51,6 @@ const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, to
   
   // For Relay sport, ensure minimum 1 player per team if we have enough players
   const isRelay = sportId === 'relay';
-  const minPerTeam = isRelay ? 1 : 0;
   
   // If Relay and we have fewer players than teams, we can't guarantee 1 per team
   // But if we have at least as many players as teams, ensure minimum distribution
