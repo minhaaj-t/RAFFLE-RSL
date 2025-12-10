@@ -844,16 +844,12 @@ function App() {
         
         // Special handling for Relay: If too few players assigned, include players with Relay as secondary preference
         const relayPlayers = playersBySport['relay'];
-        if (relayPlayers.length < totalTeams && relayPlayers.length > 0) {
+        if (relayPlayers.length < totalTeams) {
           console.log(`🏃‍♂️ Relay has only ${relayPlayers.length} players with Relay as best sport. Looking for additional players...`);
           
-          // Find players who registered for Relay but have other sports as best
+          // Find players who registered for Relay (including those already assigned to other sports)
+          // We'll reassign them to Relay to ensure minimum 1 per team
           const additionalRelayPlayers = availablePlayers.filter(player => {
-            // Skip if already assigned to a sport
-            if (assignedPlayerIds.has(player.id)) {
-              return false;
-            }
-            
             // Check if player registered for Relay
             const relayPrefs = player.sportsPreferences?.relay;
             const hasRelayPriority = relayPrefs?.priority > 0;
@@ -863,8 +859,12 @@ function App() {
                                    relayPrefs.interest.toLowerCase() !== 'none' &&
                                    relayPrefs.interest.toLowerCase() !== 'null';
             
-            return hasRelayPriority || hasRelayInterest;
+            // Include if registered for Relay AND not already in Relay
+            const alreadyInRelay = playerSportAssignments[player.id]?.sportId === 'relay';
+            return (hasRelayPriority || hasRelayInterest) && !alreadyInRelay;
           });
+          
+          console.log(`🏃‍♂️ Found ${additionalRelayPlayers.length} players registered for Relay (including those with other best sports)`);
           
           // Add enough players to ensure at least 1 per team
           const needed = totalTeams - relayPlayers.length;
@@ -877,14 +877,17 @@ function App() {
               const player = shuffledAdditional[i];
               relayPlayers.push(player);
               assignedPlayerIds.add(player.id);
+              
               // Remove from their original best sport assignment if any
               const originalBestSport = playerSportAssignments[player.id]?.sportId;
               if (originalBestSport && originalBestSport !== 'relay') {
                 const index = playersBySport[originalBestSport].findIndex(p => p.id === player.id);
                 if (index !== -1) {
                   playersBySport[originalBestSport].splice(index, 1);
+                  console.log(`🏃‍♂️ Reassigned ${player.name} from ${originalBestSport} to Relay`);
                 }
               }
+              
               // Update assignment
               playerSportAssignments[player.id] = {
                 sportId: 'relay',
@@ -892,6 +895,9 @@ function App() {
                 score: player.sportsPreferences?.relay?.priority || 0
               };
             }
+            console.log(`🏃‍♂️ Relay now has ${relayPlayers.length} players (target: ${totalTeams})`);
+          } else {
+            console.warn(`🏃‍♂️ WARNING: Could not find enough additional players for Relay. Found ${additionalRelayPlayers.length}, needed ${needed}`);
           }
         }
         
