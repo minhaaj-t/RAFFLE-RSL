@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS raffle_results (
   raffle_id INT AUTO_INCREMENT PRIMARY KEY,
   sport_id VARCHAR(50) NOT NULL COMMENT 'Sport identifier (cricket, football, badminton, etc.)',
-  team_id VARCHAR(50) NOT NULL COMMENT 'Team identifier (royals, sparks, kings, stars)',
+  team_id VARCHAR(50) NOT NULL COMMENT 'Team identifier - numeric team_id from teams table (1, 2, 3, 4)',
   player_id INT NOT NULL COMMENT 'Employee registration ID from employee_registrations table',
   player_name VARCHAR(255) NOT NULL COMMENT 'Player name',
   player_department VARCHAR(255) COMMENT 'Player department/designation',

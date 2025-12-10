@@ -1,0 +1,152 @@
+# Unmatched Users Report
+
+**Generated:** 12/10/2025, 4:41:07 PM
+**Timestamp:** 2025-12-10T13:41:07.194Z
+
+---
+
+## 📊 Summary
+
+| Metric | Count |
+|--------|-------|
+| Total Employees in employee_registrations | 557 |
+| Total Unique Employee Codes in raffle_results | 557 |
+| **Unmatched by Code** | **0** |
+| **Unmatched by ID** | **0** |
+| Matched Users | 557 |
+| Code Mismatches (code matches, ID doesn't) | 0 |
+
+---
+
+## ✅ Matched Users Summary
+
+**Total:** 557 users successfully matched
+
+These users exist in both tables with matching employee codes and IDs:
+
+### Raffle Count Distribution
+
+| Raffle Count | Number of Users |
+|--------------|-----------------|
+| 1 | 557 |
+
+---
+
+## 📋 Matched Users Details (First 100)
+
+| Employee Code | Reg ID | Name | Raffle Count |
+|---------------|--------|------|--------------|
+| 100 | 476 | ROM BAHADUR SUNAR | 1 |
+| 1062 | 218 | MAHAMAD PRAWET ANSARI | 1 |
+| 1136 | 105 | MUHAMMED RAFI THARAMMAL | 1 |
+| 1159 | 116 | MOHAMMED SHAFEEQUE MANNILTHODI | 1 |
+| 1196 | 412 | AJEESHKUMAR NADUVILA KUZHIPURATH | 1 |
+| 1218 | 482 | UMMER MADATHINGAL | 1 |
+| 1220 | 344 | RUVELYN FELIPE MARTIN | 1 |
+| 1287 | 439 | MUFSEER KARUVADAN KANDIYIL | 1 |
+| 129 | 557 | SANTOSH DARJI | 1 |
+| 1303 | 547 | YASOTHARAN KANDIAH PALANICHCHAMY | 1 |
+| 1310 | 429 | KEDARMANI KHANAL | 1 |
+| 1413 | 487 | MADHU MATTATHIL BHASKARAN | 1 |
+| 1431 | 94 | ABDUL LATHEEF | 1 |
+| 1571 | 407 | SHINELAL SHINE NIVAS | 1 |
+| 1589 | 306 | ADHAM KADAVATH | 1 |
+| 1607 | 31 | SHIMJITH ELAMBILASSERY | 1 |
+| 1660 | 560 | ASHOK KUMAR YOGAN | 1 |
+| 1683 | 207 | RAHUL KALLIYATH RADHAKRISHNAN | 1 |
+| 1700 | 232 | VINORAJ THURAIRAJAH | 1 |
+| 1736 | 384 | SHIJIN KOZHUMMAL | 1 |
+| 1771 | 144 | SUTHAKARAN KAIPOORAR VELAUTHAM | 1 |
+| 1776 | 497 | SASIKUMAR SAMYTHAMBY SUBRAMANIAM | 1 |
+| 1872 | 458 | SUNEER VELUTHEDATH ABDUL SALEEM | 1 |
+| 1876 | 41 | MISHAL POYILANGAL | 1 |
+| 1877 | 409 | RIYAS THARAKAN | 1 |
+| 2028 | 45 | PRASANTH MEENATH | 1 |
+| 2047 | 42 | AKHIL CHANDRIKA VIJAYAN | 1 |
+| 2075 | 451 | LATHEESH MODAPPATHI | 1 |
+| 208 | 236 | MUHAMMEDALI KUNNATH | 1 |
+| 2105 | 336 | NASRUDHEEN MANNARU KUNDIL | 1 |
+| 2199 | 322 | SHAMSADALI THACHARAM KUNNATH | 1 |
+| 2219 | 485 | YONGENDRA DANGI | 1 |
+| 2287 | 208 | MOHAMMED MOZHIYOTTIL CHERIYAMANDATH | 1 |
+| 2365 | 50 | MOHAMMED ASLAM PARUTHIKUTH | 1 |
+| 2407 | 201 | KULNANDA MAGAR | 1 |
+| 2425 | 198 | SANTOSH LAPCHA | 1 |
+| 2442 | 204 | MOHAMMAD SOAB MUSALMAN | 1 |
+| 2456 | 203 | MUHAMMED ASIN AZAD | 1 |
+| 2504 | 53 | KANAN KISKU | 1 |
+| 2544 | 540 | MUJEEBURAHIMAN KARUPARAMBAN | 1 |
+| 2557 | 296 | ABDU SAMEEH PALLIPARAMBIL | 1 |
+| 2581 | 149 | ABDULSALAM PERUMPALLY HUSSAN | 1 |
+| 2621 | 259 | ANSEER ELLICKATHODIKA | 1 |
+| 2636 | 330 | SHYAM BAHADUR TAMANG | 1 |
+| 2658 | 526 | MOHAN NEPALI | 1 |
+| 268 | 467 | MUHAMMED SHIHABUDDEEN KULANGARA | 1 |
+| 2715 | 274 | MUHAMMED FARHAN EDATHAN | 1 |
+| 2719 | 468 | DEV NARAYAN JHA | 1 |
+| 2736 | 69 | MUHAMMED SAKIR THEKKATH | 1 |
+| 2771 | 459 | RIFAD KARYA PARAMBATH | 1 |
+| 2812 | 250 | JAMEER NADUKKANDY | 1 |
+| 2818 | 382 | HYDARALI THACHARUPADIKKAL | 1 |
+| 2825 | 159 | MUHAMMED SHEREEF NELLICODE EBRAHIM | 1 |
+| 2840 | 368 | RAMSHEED PUTHENPEEDIKAYIL MOIDEEN | 1 |
+| 2864 | 291 | FAWAZ VETTU THOTTUNGAL | 1 |
+| 2889 | 124 | VIBIN DAS BHAGAVATHIPARAMBIL | 1 |
+| 3023 | 437 | BHAKTA BAHADUR CHHETRI | 1 |
+| 3061 | 444 | NETRA NEPALI | 1 |
+| 3138 | 521 | JOG KUMAR YADAV | 1 |
+| 3179 | 136 | UMESH BK | 1 |
+| 3220 | 351 | MARGELLEE BATOY BAGUINGCO | 1 |
+| 3245 | 122 | MUHAMMAD NIYAS PERUVANNUR | 1 |
+| 3246 | 115 | YUNUS YUSAF | 1 |
+| 3319 | 272 | MOHAMMAD MAHBABUL ISLAM | 1 |
+| 3330 | 533 | KABIR MIAH | 1 |
+| 3338 | 229 | ABDUL RASSACK PILATHOTTATHIL | 1 |
+| 3350 | 167 | ISMAIL KAITHA PRATH | 1 |
+| 3362 | 48 | MD FIROJ | 1 |
+| 3378 | 161 | SUDHY PADINHARE PURAKKAL VELAYUDHAN | 1 |
+| 3386 | 68 | BIRENDRA MANDAL KHATWE | 1 |
+| 3426 | 35 | SHOUKATHALI PAKKATH | 1 |
+| 3435 | 378 | BHIM BAHADUR THAPA | 1 |
+| 3448 | 86 | ASHIQUE ELAYAMPARAMPIL | 1 |
+| 3455 | 273 | SUKBIR TAMANG | 1 |
+| 3488 | 505 | MOHAMMAD MIZANUR RAHMAN | 1 |
+| 3490 | 113 | MOHAMAMD RASEL MIAH | 1 |
+| 3501 | 243 | TARAK MOHAMMAD | 1 |
+| 3504 | 573 | FAJIS MOIDU | 1 |
+| 3513 | 335 | SHAHADAT HOSSAIN NURUL ISLAM | 1 |
+| 3529 | 511 | KHOKAN SEKH KHEDER SEKH | 1 |
+| 3554 | 79 | AJAS POOVARANTHODU ALI | 1 |
+| 3558 | 248 | VINU SREEDHARAN | 1 |
+| 3593 | 107 | NOUSHAD KARUPPAMVEETTIL ISMAIL | 1 |
+| 3596 | 34 | ANEEZ PALLIKANDY HANEEFA | 1 |
+| 3631 | 280 | RANJITH NAYAPULLI | 1 |
+| 366 | 337 | MUHAMEDALI PADAPARAMBIL MAMMIKUTTY | 1 |
+| 3691 | 49 | MOHAMMED AFSIL KANNADI PARAMBATH | 1 |
+| 3694 | 261 | MUHAMMED SHAMIM KAKKOTAKATH VALAPPIL | 1 |
+| 3701 | 372 | MUHAMMAD REHAN MANZOOR AHMAD | 1 |
+| 3713 | 82 | MOHAMMAD ZAKARIA | 1 |
+| 3715 | 238 | HABIB ULLAH | 1 |
+| 3720 | 267 | SAROJ KUMAR MAHARA | 1 |
+| 3722 | 135 | MD AMRAN HOSSAIN | 1 |
+| 3728 | 543 | KHUM BAHADUR SARU | 1 |
+| 3741 | 150 | RAKIBUL HASAN GAZI | 1 |
+| 3742 | 376 | SHIHAB UDDIN | 1 |
+| 3764 | 253 | BIKASH BAHADUR SINGH | 1 |
+| 3774 | 496 | MUHAMMED SIDDIQUE VALIYA PARAMBATH | 1 |
+| 3783 | 410 | ANVAR SADIQUE POYILI | 1 |
+| 3815 | 506 | ARTHA LAL LAMA | 1 |
+
+*... and 457 more matched users*
+
+---
+
+## 📝 Notes
+
+- This report compares `employee_registrations` and `raffle_results` tables
+- Matching is done by both `employee_code` and `reg_id`/`player_id`
+- Unmatched users may indicate:
+  - Employees who haven't been raffled yet
+  - Data inconsistencies between tables
+  - Deleted employees with remaining raffle records
+- Code mismatches indicate potential data quality issues

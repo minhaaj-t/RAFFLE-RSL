@@ -10,40 +10,8 @@ const getBannerImage = (phase) => {
   return phase === 'mode-selection' ? '/banner.png' : '/sports_banner.png';
 };
 
-const TEAM_CARDS = [
-  {
-    id: 'royals',
-    name: 'Rawabi Royals',
-    code: 'ROYALS',
-    teamLead: 'Reneesh',
-    color: '#F9FCD9',
-    tagline: 'Lead Reneesh · Code ROYALS',
-  },
-  {
-    id: 'sparks',
-    name: 'Rawabi Sparks',
-    code: 'SPARKS',
-    teamLead: 'Noushad KTK',
-    color: '#FFF3E0',
-    tagline: 'Lead Noushad KTK · Code SPARKS',
-  },
-  {
-    id: 'kings',
-    name: 'Rawabi Kings',
-    code: 'KINGS',
-    teamLead: 'Firos',
-    color: '#E3F2FD',
-    tagline: 'Lead Firos · Code KINGS',
-  },
-  {
-    id: 'stars',
-    name: 'Rawabi Stars',
-    code: 'STARS',
-    teamLead: 'Ansar',
-    color: '#E8F5E9',
-    tagline: 'Lead Ansar · Code STARS',
-  },
-];
+// Teams will be loaded from database - using empty array as fallback
+const TEAM_CARDS_DEFAULT = [];
 
 const SPORTS_CONFIG = [
   { id: 'cricket', name: 'Cricket', needed: 11, emoji: '🏏' },
@@ -62,6 +30,121 @@ const shuffleArray = (array) => {
     [clone[i], clone[j]] = [clone[j], clone[i]];
   }
   return clone;
+};
+
+// Balanced distribution function that ensures equal totals and equal interest distribution
+const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, totalTeams, teamArrays, teams) => {
+  // Guard against undefined or empty teams
+  if (!teams || teams.length === 0) {
+    console.error('⚠️ Teams array is empty or undefined in distributePlayersBalanced');
+    return teamArrays;
+  }
+  
+  // Track interest category for each player
+  const playerInterestMap = new Map();
+  
+  // First, distribute each interest category using round-robin for perfect balance
+  // Round-robin ensures each team gets equal (or nearly equal) number from each category
+  Object.keys(playersByInterest).forEach(interestKey => {
+    const interestPlayers = shuffleArray(playersByInterest[interestKey]);
+    
+    // Round-robin distribution: each team gets players in rotation
+    // This ensures each team gets equal number from each interest category
+    interestPlayers.forEach((player, index) => {
+      const teamIndex = index % totalTeams;
+      const teamId = teams[teamIndex].id;
+      teamArrays[teamId].push(player);
+      playerInterestMap.set(player.id, interestKey);
+    });
+  });
+  
+  // Distribute players without interest using round-robin
+  if (playersWithoutInterest.length > 0) {
+    const shuffledNoInterest = shuffleArray(playersWithoutInterest);
+    shuffledNoInterest.forEach((player, index) => {
+      const teamIndex = index % totalTeams;
+      const teamId = teams[teamIndex].id;
+      teamArrays[teamId].push(player);
+      playerInterestMap.set(player.id, 'no-interest');
+    });
+  }
+  
+  // Calculate team counts and interest category counts per team
+  const teamCounts = teams.map(team => ({
+    teamId: team.id,
+    count: teamArrays[team.id].length
+  }));
+  
+  const totalPlayers = teamCounts.reduce((sum, t) => sum + t.count, 0);
+  const targetPerTeam = Math.floor(totalPlayers / totalTeams);
+  const remainder = totalPlayers % totalTeams;
+  
+  // Track interest counts per team
+  const teamInterestCounts = {};
+  teams.forEach(team => {
+    teamInterestCounts[team.id] = {};
+    Object.keys(playersByInterest).forEach(interestKey => {
+      teamInterestCounts[team.id][interestKey] = 0;
+    });
+    teamInterestCounts[team.id]['no-interest'] = 0;
+    
+    // Count interests in this team
+    teamArrays[team.id].forEach(player => {
+      const interest = playerInterestMap.get(player.id) || 'no-interest';
+      teamInterestCounts[team.id][interest] = (teamInterestCounts[team.id][interest] || 0) + 1;
+    });
+  });
+  
+  // Balance totals while preserving interest category distribution
+  const minCount = Math.min(...teamCounts.map(t => t.count));
+  const maxCount = Math.max(...teamCounts.map(t => t.count));
+  
+  // Calculate correct target: remainder teams get targetPerTeam + 1, others get targetPerTeam
+  if (maxCount - minCount > 1 || (remainder > 0 && maxCount !== minCount + 1)) {
+    // Need to balance - find teams that need players and teams with excess
+    const teamsNeeding = [];
+    const teamsWithExcess = [];
+    
+    // Randomly select which teams get the remainder (for randomization each raffle)
+    const shuffledTeamIds = shuffleArray([...teams.map(t => t.id)]);
+    const teamsGettingRemainder = shuffledTeamIds.slice(0, remainder);
+    
+    teamCounts.forEach(({ teamId, count }) => {
+      // Determine target for this team: randomly selected teams get +1
+      const target = targetPerTeam + (teamsGettingRemainder.includes(teamId) ? 1 : 0);
+      
+      if (count < target) {
+        teamsNeeding.push({ teamId, needed: target - count, currentCount: count });
+      } else if (count > target) {
+        teamsWithExcess.push({ teamId, excess: count - target, currentCount: count });
+      }
+    });
+    
+    // Redistribute while maintaining interest balance
+    // For each team needing players, find players from teams with excess
+    teamsNeeding.forEach(({ teamId, needed }) => {
+      for (let i = 0; i < needed; i++) {
+        // Find a team with excess
+        const excessTeam = teamsWithExcess.find(t => t.excess > 0);
+        if (excessTeam) {
+          // Get a player from the excess team
+          const excessPlayers = teamArrays[excessTeam.teamId];
+          if (excessPlayers.length > 0) {
+            const player = excessPlayers.pop();
+            teamArrays[teamId].push(player);
+            excessTeam.excess--;
+            
+            // Update interest counts
+            const interest = playerInterestMap.get(player.id) || 'no-interest';
+            teamInterestCounts[excessTeam.teamId][interest]--;
+            teamInterestCounts[teamId][interest] = (teamInterestCounts[teamId][interest] || 0) + 1;
+          }
+        }
+      }
+    });
+  }
+  
+  return teamArrays;
 };
 
 // Sound effects using Web Audio API
@@ -142,10 +225,17 @@ function App() {
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [resultsSaved, setResultsSaved] = useState(false); // Track if results are saved to database
   const [savingResults, setSavingResults] = useState(false); // Track if currently saving
+  const [assignedPlayersBySport, setAssignedPlayersBySport] = useState({}); // Track which players are assigned to which sport
+  const [raffledEmployeeCodes, setRaffledEmployeeCodes] = useState(new Set()); // Track already raffled employee codes
+  const [teams, setTeams] = useState(TEAM_CARDS_DEFAULT); // Teams loaded from database
+  const [loadingTeams, setLoadingTeams] = useState(true); // Track teams loading state
   const pdfButtonRef = useRef(null);
   const resultRefs = useRef({}); // Store refs for each player card
+  
+  // Use teams from state, fallback to default if not loaded
+  const TEAM_CARDS = teams.length > 0 ? teams : TEAM_CARDS_DEFAULT;
 
-  // Calculate registered players per sport
+  // Calculate registered players per sport (unique - based on highest priority)
   const registeredPlayersBySport = useMemo(() => {
     const sportKeyMap = {
       'cricket': 'cricket',
@@ -157,25 +247,96 @@ function App() {
       'relay': 'relay'
     };
     
-    const counts = {};
-    SPORTS_CONFIG.forEach((sport) => {
-      const sportKey = sportKeyMap[sport.id] || sport.id;
-      const registered = playerPool.filter(player => {
-        const sportPrefs = player.sportsPreferences?.[sportKey];
-        if (!sportPrefs) return false;
+    // First, assign each player to their best sport (highest priority)
+    const playerBestSport = {};
+    
+    playerPool.forEach(player => {
+      const prefs = player.sportsPreferences || {};
+      let bestSport = null;
+      let bestScore = -999;
+      let bestPriority = -1;
+      
+      SPORTS_CONFIG.forEach((sport) => {
+        const sportKey = sportKeyMap[sport.id] || sport.id;
+        const sportPrefs = prefs[sportKey] || {};
         const priority = sportPrefs.priority || 0;
         const interest = sportPrefs.interest || '';
-        return priority > 0 || 
-               (interest && 
-                interest.trim() !== '' &&
-                interest.toLowerCase() !== 'not specified' &&
-                interest.toLowerCase() !== 'none' &&
-                interest.toLowerCase() !== 'null');
+        
+        const hasRegistered = priority > 0 || 
+                             (interest && 
+                              interest.trim() !== '' &&
+                              interest.toLowerCase() !== 'not specified' &&
+                              interest.toLowerCase() !== 'none' &&
+                              interest.toLowerCase() !== 'null');
+        
+        if (hasRegistered) {
+          let score = priority;
+          if (interest && typeof interest === 'string') {
+            const interestLower = interest.toLowerCase();
+            if (interestLower.includes('high') || interestLower.includes('very')) {
+              score += 2;
+            } else if (interestLower.includes('medium') || interestLower.includes('moderate')) {
+              score += 1;
+            }
+          }
+          
+          if (score > bestScore || (score === bestScore && priority > bestPriority)) {
+            bestScore = score;
+            bestPriority = priority;
+            bestSport = sport.id;
+          }
+        }
       });
-      counts[sport.id] = registered;
+      
+      if (bestSport) {
+        playerBestSport[player.id] = bestSport;
+      }
     });
+    
+    // Now count players per sport (unique assignment)
+    const counts = {};
+    SPORTS_CONFIG.forEach((sport) => {
+      counts[sport.id] = playerPool.filter(player => playerBestSport[player.id] === sport.id);
+    });
+    
     return counts;
   }, [playerPool]);
+
+  // Fetch teams from API
+  const fetchTeams = async () => {
+    try {
+      setLoadingTeams(true);
+      const apiUrl = process.env.REACT_APP_API_URL || 
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      const timestamp = new Date().getTime();
+      const response = await fetch(`${apiUrl}/teams?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || `Server error: ${response.status}`);
+      }
+      const responseData = await response.json();
+      const teamsData = responseData.teams || [];
+      if (Array.isArray(teamsData) && teamsData.length > 0) {
+        console.log(`✅ Fetched ${teamsData.length} teams from database`);
+        setTeams(teamsData);
+      } else {
+        console.warn('⚠️ No teams found in database, using default');
+        setTeams(TEAM_CARDS_DEFAULT);
+      }
+      setLoadingTeams(false);
+    } catch (error) {
+      console.error('❌ Error fetching teams:', error);
+      setLoadingTeams(false);
+      // Fallback to default teams on error
+      setTeams(TEAM_CARDS_DEFAULT);
+    }
+  };
 
   // Fetch players from API - extracted to allow manual refresh
   const fetchPlayers = async () => {
@@ -239,12 +400,67 @@ function App() {
     }
   };
 
+  // Fetch already raffled employee codes from database
+  const fetchRaffledEmployeeCodes = async () => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      
+      const response = await fetch(`${apiUrl}/raffle-results`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || `Server error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const results = data.results || [];
+      
+      // Extract unique employee codes from raffle results
+      const raffledEmployeeCodes = new Set();
+      results.forEach(result => {
+        if (result.player_code && result.player_code.trim() !== '') {
+          raffledEmployeeCodes.add(result.player_code.trim());
+        }
+      });
+      
+      console.log(`📋 Found ${raffledEmployeeCodes.size} already raffled employee codes`);
+      return raffledEmployeeCodes;
+    } catch (error) {
+      console.error('❌ Error fetching raffled employee codes:', error);
+      // Return empty set on error so raffle can still proceed
+      return new Set();
+    }
+  };
+
   // Save raffle results to database
   const saveRaffleResults = async (sportId, results) => {
     try {
       setSavingResults(true);
       const apiUrl = process.env.REACT_APP_API_URL || 
         (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      
+      // Map team codes to team_id from teams table
+      const teamCodeToIdMap = {};
+      teams.forEach(team => {
+        teamCodeToIdMap[team.id] = team.teamId; // team.id is code, team.teamId is numeric ID
+      });
+      
+      // Convert results with team codes to results with team_id
+      const resultsWithTeamId = {};
+      Object.keys(results).forEach(teamCode => {
+        const teamId = teamCodeToIdMap[teamCode];
+        if (teamId) {
+          resultsWithTeamId[teamId] = results[teamCode];
+        } else {
+          console.warn(`⚠️ Team code ${teamCode} not found in teams, skipping...`);
+        }
+      });
       
       const response = await fetch(`${apiUrl}/raffle-results`, {
         method: 'POST',
@@ -253,7 +469,7 @@ function App() {
         },
         body: JSON.stringify({
           sportId: sportId,
-          raffleResults: results,
+          raffleResults: resultsWithTeamId,
           raffleDate: new Date().toISOString().slice(0, 19).replace('T', ' ')
         })
       });
@@ -336,8 +552,9 @@ function App() {
     setSavingResults(false);
   };
 
-  // Fetch players on component mount
+  // Fetch teams and players on component mount
   useEffect(() => {
+    fetchTeams();
     fetchPlayers();
   }, []);
 
@@ -380,11 +597,30 @@ function App() {
 
   useEffect(() => {
     if ((phase === 'raffle' || phase === 'sport-raffle') && hasStartedRaffle && countdown === 0 && isRaffling) {
+      // Check if teams are loaded
+      if (!TEAM_CARDS || TEAM_CARDS.length === 0) {
+        console.warn('⚠️ Teams not loaded yet, waiting...');
+        setIsRaffling(false);
+        return;
+      }
+      
       // Play start animation sound
       playSound(600, 0.2, 'sine', 0.5);
       
+      // Filter out already raffled players
+      const availablePlayers = playerPool.filter(player => {
+        const employeeCode = player.employeeCode?.trim() || '';
+        return !raffledEmployeeCodes.has(employeeCode);
+      });
+      
+      if (availablePlayers.length === 0) {
+        console.warn('⚠️ No available players after filtering raffled codes');
+        setIsRaffling(false);
+        return;
+      }
+      
       if (phase === 'raffle') {
-        // All Sports Raffle - Include ALL registered players for EACH sport they registered for
+        // All Sports Raffle - Assign each player to ONLY ONE sport based on highest priority
         const totalTeams = TEAM_CARDS.length; // 4 teams
         
         const results = {};
@@ -401,24 +637,102 @@ function App() {
           'relay': 'relay'
         };
         
-        // Get registered players for each sport (players can be in multiple sports)
-        const playersBySport = {};
-        SPORTS_CONFIG.forEach((sport) => {
-          const sportKey = sportKeyMap[sport.id] || sport.id;
-          // Get ALL players who registered for this sport
-          const registered = playerPool.filter(player => {
-            const sportPrefs = player.sportsPreferences?.[sportKey];
-            if (!sportPrefs) return false;
+        // First, assign each player to their BEST sport (highest priority) - UNIQUE ASSIGNMENT
+        const playerSportAssignments = {}; // { playerId: { sportId, priority, score } }
+        const assignedPlayerIds = new Set(); // Track which players have been assigned
+        
+        // Get all players with their sport preferences and scores (using filtered players)
+        const playersWithAllPreferences = availablePlayers.map(player => {
+          const prefs = player.sportsPreferences || {};
+          const sportScores = {};
+          
+          SPORTS_CONFIG.forEach((sport) => {
+            const sportKey = sportKeyMap[sport.id] || sport.id;
+            const sportPrefs = prefs[sportKey] || {};
             const priority = sportPrefs.priority || 0;
             const interest = sportPrefs.interest || '';
-            return priority > 0 || 
-                   (interest && 
-                    interest.trim() !== '' &&
-                    interest.toLowerCase() !== 'not specified' &&
-                    interest.toLowerCase() !== 'none' &&
-                    interest.toLowerCase() !== 'null');
+            
+            // Check if player has registered for this sport
+            const hasRegistered = priority > 0 || 
+                                 (interest && 
+                                  interest.trim() !== '' &&
+                                  interest.toLowerCase() !== 'not specified' &&
+                                  interest.toLowerCase() !== 'none' &&
+                                  interest.toLowerCase() !== 'null');
+            
+            // Calculate score: priority (0-3) + interest bonus
+            let score = hasRegistered ? priority : -999;
+            if (hasRegistered && interest && typeof interest === 'string') {
+              const interestLower = interest.toLowerCase();
+              if (interestLower.includes('high') || interestLower.includes('very')) {
+                score += 2;
+              } else if (interestLower.includes('medium') || interestLower.includes('moderate')) {
+                score += 1;
+              } else if (interestLower.includes('low') || interestLower.includes('no')) {
+                score -= 1;
+              }
+            }
+            
+            sportScores[sport.id] = {
+              score: score,
+              priority: priority,
+              interest: interest,
+              hasRegistered: hasRegistered
+            };
           });
-          playersBySport[sport.id] = registered;
+          
+          return {
+            ...player,
+            sportScores: sportScores
+          };
+        });
+        
+        // Sort players by their best sport score (to prioritize players with higher preferences)
+        playersWithAllPreferences.sort((a, b) => {
+          const aMaxScore = Math.max(...Object.values(a.sportScores).map(s => s.score));
+          const bMaxScore = Math.max(...Object.values(b.sportScores).map(s => s.score));
+          return bMaxScore - aMaxScore;
+        });
+        
+        // Assign each player to their best available sport (only if they registered)
+        playersWithAllPreferences.forEach(player => {
+          // Find the sport with highest score for this player (only registered sports)
+          let bestSport = null;
+          let bestScore = -999;
+          
+          SPORTS_CONFIG.forEach((sport) => {
+            const sportData = player.sportScores[sport.id];
+            if (sportData && sportData.hasRegistered && sportData.score > bestScore) {
+              // Check if this sport still needs players (not all teams full)
+              // For now, assign based on priority only
+              bestScore = sportData.score;
+              bestSport = sport.id;
+            }
+          });
+          
+          // If player has registered for at least one sport, assign them
+          if (bestSport) {
+            playerSportAssignments[player.id] = {
+              sportId: bestSport,
+              priority: player.sportScores[bestSport].priority,
+              score: player.sportScores[bestSport].score
+            };
+            assignedPlayerIds.add(player.id);
+          }
+        });
+        
+        // Now group players by their assigned sport (UNIQUE - each player in only one sport)
+        const playersBySport = {};
+        SPORTS_CONFIG.forEach((sport) => {
+          playersBySport[sport.id] = [];
+        });
+        
+        Object.keys(playerSportAssignments).forEach(playerId => {
+          const assignment = playerSportAssignments[playerId];
+          const player = availablePlayers.find(p => p.id === parseInt(playerId));
+          if (player) {
+            playersBySport[assignment.sportId].push(player);
+          }
         });
         
         // Now distribute players for each sport across teams, balancing interest categories
@@ -465,44 +779,8 @@ function App() {
             teamSportArrays[team.id] = [];
           });
           
-          // Distribute each interest category evenly across teams
-          Object.keys(playersByInterest).forEach(interestKey => {
-            const interestPlayers = playersByInterest[interestKey];
-            const totalInterestPlayers = interestPlayers.length;
-            const basePerTeam = Math.floor(totalInterestPlayers / totalTeams);
-            const remainder = totalInterestPlayers % totalTeams;
-            
-            // Shuffle teams for random distribution of remainder
-            const shuffledTeams = [...TEAM_CARDS];
-            shuffleArray(shuffledTeams);
-            
-            let playerIdx = 0;
-            shuffledTeams.forEach((team, teamIdx) => {
-              const playersForThisTeam = basePerTeam + (teamIdx < remainder ? 1 : 0);
-              for (let i = 0; i < playersForThisTeam && playerIdx < interestPlayers.length; i++) {
-                teamSportArrays[team.id].push(interestPlayers[playerIdx]);
-                playerIdx++;
-              }
-            });
-          });
-          
-          // Distribute players without interest evenly
-          if (shuffledNoInterest.length > 0) {
-            const totalNoInterest = shuffledNoInterest.length;
-            const basePerTeam = Math.floor(totalNoInterest / totalTeams);
-            const remainder = totalNoInterest % totalTeams;
-            
-            const shuffledTeams = shuffleArray([...TEAM_CARDS]);
-            
-            let playerIdx = 0;
-            shuffledTeams.forEach((team, teamIdx) => {
-              const playersForThisTeam = basePerTeam + (teamIdx < remainder ? 1 : 0);
-              for (let i = 0; i < playersForThisTeam && playerIdx < shuffledNoInterest.length; i++) {
-                teamSportArrays[team.id].push(shuffledNoInterest[playerIdx]);
-                playerIdx++;
-              }
-            });
-          }
+          // Use balanced distribution to ensure equal totals and equal interest distribution
+          distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS);
           
           // Shuffle players within each team for more randomness
           TEAM_CARDS.forEach((team) => {
@@ -517,6 +795,7 @@ function App() {
         setResultsSaved(false); // Reset saved status when new raffle starts
       } else if (phase === 'sport-raffle' && selectedSport) {
         // Sport-by-Sport Raffle - Only use players who have registered/expressed interest in this sport
+        // AND who haven't been assigned to a previous sport (based on priority)
         const totalTeams = TEAM_CARDS.length; // 4 teams
         
         // Filter and sort players by their interest and priority for this sport
@@ -533,15 +812,32 @@ function App() {
         
         const sportKey = sportKeyMap[sportId] || sportId;
         
-        // Filter players who have registered interest in this sport (priority > 0 OR interest is not "Not specified")
-        const playersWithPreferences = playerPool
+        // Get players already assigned to other sports from previous raffles
+        const assignedPlayerIds = new Set();
+        Object.keys(raffleResults).forEach(teamId => {
+          Object.keys(raffleResults[teamId]).forEach(prevSportId => {
+            if (prevSportId !== sportId) {
+              const prevPlayers = raffleResults[teamId][prevSportId] || [];
+              prevPlayers.forEach(player => assignedPlayerIds.add(player.id));
+            }
+          });
+        });
+        
+        // Filter players who have registered interest in this sport AND haven't been assigned to another sport
+        const playersWithPreferences = availablePlayers
+          .filter(player => !assignedPlayerIds.has(player.id)) // Exclude already assigned players
           .map(player => {
             const prefs = player.sportsPreferences || {};
             const sportPrefs = prefs[sportKey] || {};
             const priority = sportPrefs.priority || 0;
             const interest = sportPrefs.interest || 'Not specified';
             
-            // Calculate score: priority (0-3) + interest bonus
+            // Check if this is their best sport (highest priority)
+            let isBestSport = true;
+            let bestSportPriority = priority;
+            let bestSportScore = priority;
+            
+            // Calculate score for this sport
             let score = priority;
             if (interest && typeof interest === 'string') {
               const interestLower = interest.toLowerCase();
@@ -553,16 +849,48 @@ function App() {
                 score -= 1;
               }
             }
+            bestSportScore = score;
+            
+            // Check if player has a higher priority sport
+            Object.keys(sportKeyMap).forEach(otherSportKey => {
+              if (otherSportKey !== sportKey) {
+                const otherPrefs = prefs[sportKeyMap[otherSportKey]] || {};
+                const otherPriority = otherPrefs.priority || 0;
+                const otherInterest = otherPrefs.interest || '';
+                const hasOtherRegistered = otherPriority > 0 || 
+                  (otherInterest && 
+                   otherInterest.trim() !== '' &&
+                   otherInterest.toLowerCase() !== 'not specified' &&
+                   otherInterest.toLowerCase() !== 'none' &&
+                   otherInterest.toLowerCase() !== 'null');
+                
+                if (hasOtherRegistered) {
+                  let otherScore = otherPriority;
+                  if (otherInterest && typeof otherInterest === 'string') {
+                    const otherInterestLower = otherInterest.toLowerCase();
+                    if (otherInterestLower.includes('high') || otherInterestLower.includes('very')) {
+                      otherScore += 2;
+                    } else if (otherInterestLower.includes('medium') || otherInterestLower.includes('moderate')) {
+                      otherScore += 1;
+                    }
+                  }
+                  
+                  if (otherScore > bestSportScore || (otherScore === bestSportScore && otherPriority > bestSportPriority)) {
+                    isBestSport = false;
+                  }
+                }
+              }
+            });
             
             return {
               ...player,
               sportScore: score,
               sportPriority: priority,
-              sportInterest: interest
+              sportInterest: interest,
+              isBestSport: isBestSport
             };
           })
-          // Only include players who have registered interest
-          // Check: priority > 0 OR interest is not empty/not specified
+          // Only include players who have registered interest AND this is their best sport
           .filter(player => {
             const hasPriority = player.sportPriority > 0;
             const hasInterest = player.sportInterest && 
@@ -570,7 +898,8 @@ function App() {
                                player.sportInterest.toLowerCase() !== 'not specified' &&
                                player.sportInterest.toLowerCase() !== 'none' &&
                                player.sportInterest.toLowerCase() !== 'null';
-            return hasPriority || hasInterest;
+            // Only include if registered AND this is their best sport (highest priority)
+            return (hasPriority || hasInterest) && player.isBestSport;
           });
         
         // If no players registered for this sport, show empty results
@@ -639,43 +968,8 @@ function App() {
           teamSportArrays[team.id] = [];
         });
         
-        // Distribute each interest category evenly across teams
-        Object.keys(playersByInterest).forEach(interestKey => {
-          const interestPlayers = playersByInterest[interestKey];
-          const totalInterestPlayers = interestPlayers.length;
-          const basePerTeam = Math.floor(totalInterestPlayers / totalTeams);
-          const remainder = totalInterestPlayers % totalTeams;
-          
-          // Shuffle teams for random distribution of remainder
-          const shuffledTeams = shuffleArray([...TEAM_CARDS]);
-          
-          let playerIdx = 0;
-          shuffledTeams.forEach((team, teamIdx) => {
-            const playersForThisTeam = basePerTeam + (teamIdx < remainder ? 1 : 0);
-            for (let i = 0; i < playersForThisTeam && playerIdx < interestPlayers.length; i++) {
-              teamSportArrays[team.id].push(interestPlayers[playerIdx]);
-              playerIdx++;
-            }
-          });
-        });
-        
-        // Distribute players without interest evenly
-        if (shuffledNoInterest.length > 0) {
-          const totalNoInterest = shuffledNoInterest.length;
-          const basePerTeam = Math.floor(totalNoInterest / totalTeams);
-          const remainder = totalNoInterest % totalTeams;
-          
-          const shuffledTeams = shuffleArray([...TEAM_CARDS]);
-          
-          let playerIdx = 0;
-          shuffledTeams.forEach((team, teamIdx) => {
-            const playersForThisTeam = basePerTeam + (teamIdx < remainder ? 1 : 0);
-            for (let i = 0; i < playersForThisTeam && playerIdx < shuffledNoInterest.length; i++) {
-              teamSportArrays[team.id].push(shuffledNoInterest[playerIdx]);
-              playerIdx++;
-            }
-          });
-        }
+        // Use balanced distribution to ensure equal totals and equal interest distribution
+        distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS);
         
         // Shuffle players within each team for more randomness
         TEAM_CARDS.forEach((team) => {
@@ -689,7 +983,7 @@ function App() {
         setResultsSaved(false); // Reset saved status when new raffle starts
       }
     }
-  }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool]);
+  }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool, raffledEmployeeCodes]);
 
   useEffect(() => {
     if (!isRaffling) {
@@ -998,15 +1292,42 @@ function App() {
   };
 
   const handleStartRaffle = async () => {
+    // Check if teams are loaded
+    if (!teams || teams.length === 0) {
+      alert('⚠️ Teams are not loaded yet. Please wait for teams to load from the database.');
+      return;
+    }
+    
     // Initialize and resume audio context before playing sounds
     await resumeAudioContext();
+    
+    // Fetch already raffled employee codes
+    const raffledCodes = await fetchRaffledEmployeeCodes();
+    setRaffledEmployeeCodes(raffledCodes);
+    
+    // Filter out players who are already in raffle_results
+    const availablePlayers = playerPool.filter(player => {
+      const employeeCode = player.employeeCode?.trim() || '';
+      return !raffledCodes.has(employeeCode);
+    });
+    
+    if (availablePlayers.length === 0) {
+      alert('⚠️ No available players found. All players have already been raffled.');
+      return;
+    }
+    
+    const excludedCount = playerPool.length - availablePlayers.length;
+    if (excludedCount > 0) {
+      console.log(`🚫 Excluded ${excludedCount} already raffled players. ${availablePlayers.length} players available for raffle.`);
+    }
+    
     playRaffleStartSound();
     setHasStartedRaffle(true);
     setCountdown(5); // 5 seconds countdown
     setIsRaffling(true);
     setRaffleResults({});
     setRevealedPlayers({});
-    setShuffledPlayers(shuffleArray([...playerPool]));
+    setShuffledPlayers(shuffleArray([...availablePlayers]));
     setTickerIndex(0);
   };
 

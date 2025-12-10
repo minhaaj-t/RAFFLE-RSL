@@ -38,7 +38,7 @@ db.getConnection((err, connection) => {
     CREATE TABLE IF NOT EXISTS raffle_results (
       raffle_id INT AUTO_INCREMENT PRIMARY KEY,
       sport_id VARCHAR(50) NOT NULL COMMENT 'Sport identifier (cricket, football, badminton, etc.)',
-      team_id VARCHAR(50) NOT NULL COMMENT 'Team identifier (royals, sparks, kings, stars)',
+      team_id VARCHAR(50) NOT NULL COMMENT 'Team identifier - numeric team_id from teams table (1, 2, 3, 4)',
       player_id INT NOT NULL COMMENT 'Employee registration ID from employee_registrations table',
       player_name VARCHAR(255) NOT NULL COMMENT 'Player name',
       player_department VARCHAR(255) COMMENT 'Player department/designation',
@@ -332,13 +332,16 @@ app.post('/api/raffle-results', (req, res) => {
   const values = [];
   
   // Prepare insert statements for each team and player
+  // teamId is now numeric team_id from teams table
   Object.keys(raffleResults).forEach(teamId => {
     const players = raffleResults[teamId];
     if (Array.isArray(players)) {
       players.forEach(player => {
+        // Convert teamId to string (database column is VARCHAR, but stores numeric team_id)
+        const teamIdValue = String(teamId);
         values.push([
           sportId,
-          teamId,
+          teamIdValue,
           player.id || player.player_id,
           player.name || player.player_name || '',
           player.department || player.player_department || '',
@@ -421,6 +424,65 @@ app.get('/api/raffle-results', (req, res) => {
     res.json({
       results: results,
       count: results.length
+    });
+  });
+});
+
+// API endpoint to get all teams
+app.get('/api/teams', (req, res) => {
+  // Set headers to prevent caching and ensure fresh data
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  const query = `
+    SELECT 
+      team_id,
+      team_name,
+      team_code,
+      team_lead_employee_code,
+      team_lead_name,
+      color_code,
+      description
+    FROM teams
+    ORDER BY team_id ASC
+  `;
+  
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching teams:', err);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+      return res.status(500).json({ 
+        error: 'Failed to fetch teams',
+        details: err.message,
+        code: err.code
+      });
+    }
+    
+    // Transform results to match frontend format
+    const teams = results.map(row => {
+      const teamCode = (row.team_code || '').toLowerCase();
+      const teamLeadName = row.team_lead_name || '';
+      const teamCodeUpper = (row.team_code || '').toUpperCase();
+      
+      return {
+        id: teamCode, // Use lowercase team_code as id for compatibility
+        teamId: row.team_id, // Keep database team_id
+        name: row.team_name || '',
+        code: teamCodeUpper,
+        teamLead: teamLeadName,
+        teamLeadEmployeeCode: row.team_lead_employee_code || '',
+        color: row.color_code || '#FFFFFF',
+        description: row.description || '',
+        tagline: teamLeadName ? `Lead ${teamLeadName} · Code ${teamCodeUpper}` : `Code ${teamCodeUpper}`
+      };
+    });
+    
+    res.json({
+      teams: teams,
+      count: teams.length,
+      timestamp: new Date().toISOString()
     });
   });
 });
