@@ -225,9 +225,11 @@ function App() {
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [resultsSaved, setResultsSaved] = useState(false); // Track if results are saved to database
   const [savingResults, setSavingResults] = useState(false); // Track if currently saving
+  // eslint-disable-next-line no-unused-vars
   const [assignedPlayersBySport, setAssignedPlayersBySport] = useState({}); // Track which players are assigned to which sport
   const [raffledEmployeeCodes, setRaffledEmployeeCodes] = useState(new Set()); // Track already raffled employee codes
   const [teams, setTeams] = useState(TEAM_CARDS_DEFAULT); // Teams loaded from database
+  // eslint-disable-next-line no-unused-vars
   const [loadingTeams, setLoadingTeams] = useState(true); // Track teams loading state
   const pdfButtonRef = useRef(null);
   const resultRefs = useRef({}); // Store refs for each player card
@@ -951,7 +953,7 @@ function App() {
         setResultsSaved(false); // Reset saved status when new raffle starts
       }
     }
-  }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool, raffledEmployeeCodes]);
+  }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool, raffledEmployeeCodes, TEAM_CARDS, raffleResults]);
 
   useEffect(() => {
     if (!isRaffling) {
@@ -1053,7 +1055,7 @@ function App() {
     }, 100); // Reveal one player every 100ms
     
     return () => clearTimeout(revealTimer);
-  }, [raffleResults, revealedPlayers, hasStartedRaffle, isRaffling]);
+  }, [raffleResults, revealedPlayers, hasStartedRaffle, isRaffling, TEAM_CARDS]);
 
   // Confetti effect when raffle is complete and all players are revealed
   useEffect(() => {
@@ -1129,7 +1131,7 @@ function App() {
 
       return () => clearInterval(interval);
     }
-  }, [raffleResults, revealedPlayers, isRaffling, hasStartedRaffle]);
+  }, [raffleResults, revealedPlayers, isRaffling, hasStartedRaffle, TEAM_CARDS]);
 
   // Auto-scroll to newly revealed player
   useEffect(() => {
@@ -1171,7 +1173,7 @@ function App() {
         }
       }, 150); // Wait a bit for the DOM to update
     }
-  }, [revealedPlayers, raffleResults, hasStartedRaffle, isRaffling]);
+  }, [revealedPlayers, raffleResults, hasStartedRaffle, isRaffling, TEAM_CARDS]);
 
   // Auto-scroll to PDF button when all players are revealed
   useEffect(() => {
@@ -1206,7 +1208,7 @@ function App() {
         }
       }, 500);
     }
-  }, [raffleResults, revealedPlayers, hasStartedRaffle, isRaffling]);
+  }, [raffleResults, revealedPlayers, hasStartedRaffle, isRaffling, TEAM_CARDS]);
 
 
   const handleModeSelection = (mode) => {
@@ -1885,6 +1887,7 @@ function App() {
         }
         
         let currentX = margin;
+        const currentYPosition = yPosition; // Capture for loop
         
         TEAM_CARDS.forEach((team) => {
           const teamSports = raffleResults[team.id] || {};
@@ -1897,7 +1900,7 @@ function App() {
           
           // Draw cell border
           pdf.setDrawColor(220, 220, 220);
-          pdf.rect(currentX, yPosition - 4, colWidth, 8, 'S');
+          pdf.rect(currentX, currentYPosition - 4, colWidth, 8, 'S');
           
           if (playerIndex < sportPlayers.length) {
             const player = sportPlayers[playerIndex];
@@ -1911,13 +1914,13 @@ function App() {
             // Wrap text if too long
             const maxWidth = colWidth - (cellPadding * 2);
             const lines = pdf.splitTextToSize(playerText, maxWidth);
-            pdf.text(lines[0], currentX + cellPadding, yPosition);
+            pdf.text(lines[0], currentX + cellPadding, currentYPosition);
             
             if (deptText) {
               pdf.setFontSize(7);
               pdf.setTextColor(100, 100, 100);
               const deptLines = pdf.splitTextToSize(deptText, maxWidth);
-              pdf.text(deptLines[0], currentX + cellPadding, yPosition + 3.5);
+              pdf.text(deptLines[0], currentX + cellPadding, currentYPosition + 3.5);
               pdf.setTextColor(0, 0, 0);
             }
           }
@@ -2110,6 +2113,7 @@ function App() {
         }
         
         let currentX = sportMargin;
+        const currentSportYPosition = sportYPosition; // Capture for loop
         
         TEAM_CARDS.forEach((team) => {
           const teamSports = raffleResults[team.id] || {};
@@ -2121,7 +2125,7 @@ function App() {
           }
           
           sportPdf.setDrawColor(220, 220, 220);
-          sportPdf.rect(currentX, sportYPosition - 4, sportColWidth, 8, 'S');
+          sportPdf.rect(currentX, currentSportYPosition - 4, sportColWidth, 8, 'S');
           
           if (playerIndex < sportPlayers.length) {
             const player = sportPlayers[playerIndex];
@@ -2134,13 +2138,13 @@ function App() {
             
             const maxWidth = sportColWidth - (sportCellPadding * 2);
             const lines = sportPdf.splitTextToSize(playerText, maxWidth);
-            sportPdf.text(lines[0], currentX + sportCellPadding, sportYPosition);
+            sportPdf.text(lines[0], currentX + sportCellPadding, currentSportYPosition);
             
             if (deptText) {
               sportPdf.setFontSize(7);
               sportPdf.setTextColor(100, 100, 100);
               const deptLines = sportPdf.splitTextToSize(deptText, maxWidth);
-              sportPdf.text(deptLines[0], currentX + sportCellPadding, sportYPosition + 3.5);
+              sportPdf.text(deptLines[0], currentX + sportCellPadding, currentSportYPosition + 3.5);
               sportPdf.setTextColor(0, 0, 0);
             }
           }
