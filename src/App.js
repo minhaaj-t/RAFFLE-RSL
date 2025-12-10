@@ -903,7 +903,7 @@ function App() {
         setResultsSaved(false); // Reset saved status when new raffle starts
       } else if (phase === 'sport-raffle' && selectedSport) {
         // Sport-by-Sport Raffle - Only use players who have registered/expressed interest in this sport
-        // AND who haven't been assigned to a previous sport (based on priority)
+        // AND who haven't been assigned to THIS sport yet (but CAN be in other sports)
         const totalTeams = TEAM_CARDS.length; // 4 teams
         
         // Filter and sort players by their interest and priority for this sport
@@ -920,16 +920,30 @@ function App() {
         
         const sportKey = sportKeyMap[sportId] || sportId;
         
-        // Filter players who have registered interest in this sport AND haven't been assigned to THIS sport yet
-        // Note: In sport-by-sport mode, players CAN be in multiple sports (unlike All Sports mode)
-        // In sport-by-sport mode, allow players to be in multiple sports (not just best sport)
+        // In sport-by-sport mode, players CAN be in multiple sports
+        // So we should NOT filter by raffledEmployeeCodes - only check if they're already in THIS sport
+        // Use the full playerPool instead of availablePlayers (which excludes previously raffled players)
+        const playersForThisSport = playerPool.filter(player => {
+          // Only exclude if already in THIS specific sport
+          let alreadyInThisSport = false;
+          Object.keys(raffleResults).forEach(teamId => {
+            if (raffleResults[teamId] && raffleResults[teamId][sportId]) {
+              const playersInThisSport = raffleResults[teamId][sportId];
+              if (playersInThisSport.some(p => p.id === player.id)) {
+                alreadyInThisSport = true;
+              }
+            }
+          });
+          return !alreadyInThisSport;
+        });
         
         // Debug logging for Relay
         if (selectedSport.id === 'relay') {
-          console.log(`🏃‍♂️ Relay: Total availablePlayers = ${availablePlayers.length}`);
+          console.log(`🏃‍♂️ Relay: Total playerPool = ${playerPool.length}`);
+          console.log(`🏃‍♂️ Relay: Players for this sport (after filtering) = ${playersForThisSport.length}`);
         }
         
-        const playersWithPreferences = availablePlayers
+        const playersWithPreferences = playersForThisSport
           .map(player => {
             const prefs = player.sportsPreferences || {};
             const sportPrefs = prefs[sportKey] || {};
@@ -970,18 +984,9 @@ function App() {
               return false; // Not registered for this sport
             }
             
-            // Check if player is already assigned to THIS sport (not other sports)
-            let alreadyInThisSport = false;
-            Object.keys(raffleResults).forEach(teamId => {
-              if (raffleResults[teamId][sportId]) {
-                const playersInThisSport = raffleResults[teamId][sportId];
-                if (playersInThisSport.some(p => p.id === player.id)) {
-                  alreadyInThisSport = true;
-                }
-              }
-            });
-            
-            return !alreadyInThisSport; // Include if not already in this sport
+            // Note: We already filtered out players already in THIS sport above
+            // So we just need to check if they're registered for this sport
+            return true; // Include all players who are registered for this sport
           });
         
         // Debug logging for Relay
