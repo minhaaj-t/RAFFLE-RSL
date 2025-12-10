@@ -812,30 +812,15 @@ function App() {
         
         const sportKey = sportKeyMap[sportId] || sportId;
         
-        // Get players already assigned to other sports from previous raffles
-        const assignedPlayerIds = new Set();
-        Object.keys(raffleResults).forEach(teamId => {
-          Object.keys(raffleResults[teamId]).forEach(prevSportId => {
-            if (prevSportId !== sportId) {
-              const prevPlayers = raffleResults[teamId][prevSportId] || [];
-              prevPlayers.forEach(player => assignedPlayerIds.add(player.id));
-            }
-          });
-        });
-        
-        // Filter players who have registered interest in this sport AND haven't been assigned to another sport
+        // Filter players who have registered interest in this sport AND haven't been assigned to THIS sport yet
+        // Note: In sport-by-sport mode, players CAN be in multiple sports (unlike All Sports mode)
+        // In sport-by-sport mode, allow players to be in multiple sports (not just best sport)
         const playersWithPreferences = availablePlayers
-          .filter(player => !assignedPlayerIds.has(player.id)) // Exclude already assigned players
           .map(player => {
             const prefs = player.sportsPreferences || {};
             const sportPrefs = prefs[sportKey] || {};
             const priority = sportPrefs.priority || 0;
             const interest = sportPrefs.interest || 'Not specified';
-            
-            // Check if this is their best sport (highest priority)
-            let isBestSport = true;
-            let bestSportPriority = priority;
-            let bestSportScore = priority;
             
             // Calculate score for this sport
             let score = priority;
@@ -849,48 +834,16 @@ function App() {
                 score -= 1;
               }
             }
-            bestSportScore = score;
-            
-            // Check if player has a higher priority sport
-            Object.keys(sportKeyMap).forEach(otherSportKey => {
-              if (otherSportKey !== sportKey) {
-                const otherPrefs = prefs[sportKeyMap[otherSportKey]] || {};
-                const otherPriority = otherPrefs.priority || 0;
-                const otherInterest = otherPrefs.interest || '';
-                const hasOtherRegistered = otherPriority > 0 || 
-                  (otherInterest && 
-                   otherInterest.trim() !== '' &&
-                   otherInterest.toLowerCase() !== 'not specified' &&
-                   otherInterest.toLowerCase() !== 'none' &&
-                   otherInterest.toLowerCase() !== 'null');
-                
-                if (hasOtherRegistered) {
-                  let otherScore = otherPriority;
-                  if (otherInterest && typeof otherInterest === 'string') {
-                    const otherInterestLower = otherInterest.toLowerCase();
-                    if (otherInterestLower.includes('high') || otherInterestLower.includes('very')) {
-                      otherScore += 2;
-                    } else if (otherInterestLower.includes('medium') || otherInterestLower.includes('moderate')) {
-                      otherScore += 1;
-                    }
-                  }
-                  
-                  if (otherScore > bestSportScore || (otherScore === bestSportScore && otherPriority > bestSportPriority)) {
-                    isBestSport = false;
-                  }
-                }
-              }
-            });
             
             return {
               ...player,
               sportScore: score,
               sportPriority: priority,
-              sportInterest: interest,
-              isBestSport: isBestSport
+              sportInterest: interest
             };
           })
-          // Only include players who have registered interest AND this is their best sport
+          // Only include players who have registered for this sport
+          // AND haven't been assigned to THIS specific sport yet (check raffleResults for this sport)
           .filter(player => {
             const hasPriority = player.sportPriority > 0;
             const hasInterest = player.sportInterest && 
@@ -898,8 +851,23 @@ function App() {
                                player.sportInterest.toLowerCase() !== 'not specified' &&
                                player.sportInterest.toLowerCase() !== 'none' &&
                                player.sportInterest.toLowerCase() !== 'null';
-            // Only include if registered AND this is their best sport (highest priority)
-            return (hasPriority || hasInterest) && player.isBestSport;
+            
+            if (!(hasPriority || hasInterest)) {
+              return false; // Not registered for this sport
+            }
+            
+            // Check if player is already assigned to THIS sport (not other sports)
+            let alreadyInThisSport = false;
+            Object.keys(raffleResults).forEach(teamId => {
+              if (raffleResults[teamId][sportId]) {
+                const playersInThisSport = raffleResults[teamId][sportId];
+                if (playersInThisSport.some(p => p.id === player.id)) {
+                  alreadyInThisSport = true;
+                }
+              }
+            });
+            
+            return !alreadyInThisSport; // Include if not already in this sport
           });
         
         // If no players registered for this sport, show empty results
