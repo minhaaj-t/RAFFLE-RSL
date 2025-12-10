@@ -147,9 +147,9 @@ const distributePlayersBalanced = (playersByInterest, playersWithoutInterest, to
     count: teamArrays[team.id].length
   }));
   
-  const totalPlayers = teamCounts.reduce((sum, t) => sum + t.count, 0);
-  const targetPerTeam = Math.floor(totalPlayers / totalTeams);
-  const remainder = totalPlayers % totalTeams;
+  const distributedTotal = teamCounts.reduce((sum, t) => sum + t.count, 0);
+  const targetPerTeam = Math.floor(distributedTotal / totalTeams);
+  const remainder = distributedTotal % totalTeams;
   
   // Track interest counts per team
   const teamInterestCounts = {};
