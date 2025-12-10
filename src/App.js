@@ -1044,14 +1044,24 @@ function App() {
         });
         const shuffledNoInterest = shuffleArray(playersWithoutInterest);
         
-        const results = {};
-        const revealed = {};
+        // Merge with existing results instead of replacing them
+        // This preserves results from previous sports in sport-by-sport mode
+        const results = { ...raffleResults };
+        const revealed = { ...revealedPlayers };
         
         // Initialize team arrays for this sport
         const teamSportArrays = {};
         TEAM_CARDS.forEach((team) => {
-          results[team.id] = {};
-          revealed[team.id] = {};
+          // Preserve existing results for other sports
+          if (!results[team.id]) {
+            results[team.id] = {};
+          }
+          if (!revealed[team.id]) {
+            revealed[team.id] = {};
+          }
+          // Initialize this sport's arrays
+          results[team.id][selectedSport.id] = [];
+          revealed[team.id][selectedSport.id] = 0;
           teamSportArrays[team.id] = [];
         });
         
