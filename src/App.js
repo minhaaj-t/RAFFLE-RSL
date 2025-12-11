@@ -355,6 +355,7 @@ function App() {
   const [teams, setTeams] = useState(TEAM_CARDS_DEFAULT); // Teams loaded from database
   // eslint-disable-next-line no-unused-vars
   const [loadingTeams, setLoadingTeams] = useState(true); // Track teams loading state
+  const [isBgmPlaying, setIsBgmPlaying] = useState(true);
   const pdfButtonRef = useRef(null);
   const resultRefs = useRef({}); // Store refs for each player card
   const bgmRef = useRef(null); // Background music audio element ref
@@ -782,10 +783,12 @@ function App() {
     const playBackgroundMusic = async () => {
       if (bgmRef.current) {
         try {
-          bgmRef.current.volume = 0.3; // Set volume to 30%
+          bgmRef.current.volume = 1; // Full volume
           await bgmRef.current.play();
+          setIsBgmPlaying(true);
         } catch (error) {
           console.log('Background music autoplay blocked by browser, will play on user interaction');
+          setIsBgmPlaying(false);
         }
       }
     };
@@ -796,6 +799,22 @@ function App() {
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const toggleBgm = async () => {
+    if (!bgmRef.current) return;
+    try {
+      if (isBgmPlaying) {
+        bgmRef.current.pause();
+        setIsBgmPlaying(false);
+      } else {
+        bgmRef.current.volume = 1;
+        await bgmRef.current.play();
+        setIsBgmPlaying(true);
+      }
+    } catch (error) {
+      console.error('Error toggling background music:', error);
+    }
   };
 
   const getTotalSelectedPlayersForSport = useCallback((sportId) => {
@@ -3171,6 +3190,15 @@ function App() {
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
       >
         {theme === 'dark' ? '☀️' : '🌙'}
+      </button>
+      <button
+        type="button"
+        className="theme-toggle-btn"
+        style={{ right: '60px' }}
+        onClick={toggleBgm}
+        aria-label={isBgmPlaying ? 'Pause background music' : 'Play background music'}
+      >
+        {isBgmPlaying ? '🔊' : '🔈'}
       </button>
         <div className="banner-container">
           <img src={getBannerImage(phase)} alt="RSL Raffle Banner" className="banner-image" />
