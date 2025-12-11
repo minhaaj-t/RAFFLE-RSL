@@ -4,6 +4,7 @@ import confetti from 'canvas-confetti';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import './App.css';
+import bgmAudio from './assets/images/audios/Fifa Arab 2025.mp3';
 
 // Banner images from public folder
 const getBannerImage = (phase) => {
@@ -30,6 +31,52 @@ const shuffleArray = (array) => {
     [clone[i], clone[j]] = [clone[j], clone[i]];
   }
   return clone;
+};
+
+// Interest score helper (higher interest -> higher score)
+const getInterestScore = (interest) => {
+  if (!interest || typeof interest !== 'string') return 0;
+  const lower = interest.toLowerCase();
+  if (lower.includes('high') || lower.includes('very')) return 2;
+  if (lower.includes('medium') || lower.includes('moderate')) return 1;
+  if (lower.includes('low') || lower.includes('no')) return -1;
+  return 0;
+};
+
+// Determine a player's primary sport based on priority + interest score
+// Returns a single sportId or null if none registered
+const determinePrimarySport = (player) => {
+  const prefs = player.sportsPreferences || {};
+  let bestSportId = null;
+  let bestScore = -Infinity;
+  let bestPriority = -Infinity;
+
+  SPORTS_CONFIG.forEach((sport) => {
+    const sportPref = prefs[sport.id] || {};
+    const priority = sportPref.priority || 0;
+    const interest = sportPref.interest || '';
+    const hasRegistration =
+      priority > 0 ||
+      (interest &&
+        interest.trim() !== '' &&
+        interest.toLowerCase() !== 'not specified' &&
+        interest.toLowerCase() !== 'none' &&
+        interest.toLowerCase() !== 'null');
+
+    if (!hasRegistration) return;
+
+    const score = priority + getInterestScore(interest);
+    if (
+      score > bestScore ||
+      (score === bestScore && priority > bestPriority)
+    ) {
+      bestSportId = sport.id;
+      bestScore = score;
+      bestPriority = priority;
+    }
+  });
+
+  return bestSportId;
 };
 
 // Balanced distribution function that ensures equal totals and equal interest distribution
@@ -310,6 +357,22 @@ function App() {
   const [loadingTeams, setLoadingTeams] = useState(true); // Track teams loading state
   const pdfButtonRef = useRef(null);
   const resultRefs = useRef({}); // Store refs for each player card
+  const bgmRef = useRef(null); // Background music audio element ref
+
+  // Pre-compute how many players are uniquely mapped to each sport (primary sport assignment)
+  const registeredCountsBySport = useMemo(() => {
+    const counts = {};
+    SPORTS_CONFIG.forEach((sport) => { counts[sport.id] = 0; });
+
+    playerPool.forEach((player) => {
+      const primarySport = determinePrimarySport(player);
+      if (primarySport) {
+        counts[primarySport] = (counts[primarySport] || 0) + 1;
+      }
+    });
+
+    return counts;
+  }, [playerPool]);
   
   // Use teams from state, fallback to default if not loaded
   const TEAM_CARDS = teams.length > 0 ? teams : TEAM_CARDS_DEFAULT;
@@ -545,6 +608,49 @@ function App() {
     }
   };
 
+  // Fetch already raffled players for a specific sport from database
+  const fetchRaffledPlayersForSport = async (sportId) => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || 
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
+      
+      const response = await fetch(`${apiUrl}/raffle-results?sportId=${encodeURIComponent(sportId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || `Server error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const results = data.results || [];
+      
+      // Extract unique player IDs and employee codes for this sport
+      const raffledPlayerIds = new Set();
+      const raffledEmployeeCodes = new Set();
+      
+      results.forEach(result => {
+        if (result.player_id) {
+          raffledPlayerIds.add(result.player_id);
+        }
+        if (result.player_code && result.player_code.trim() !== '') {
+          raffledEmployeeCodes.add(result.player_code.trim());
+        }
+      });
+      
+      console.log(`📋 Found ${raffledPlayerIds.size} already raffled players for sport: ${sportId}`);
+      return { playerIds: raffledPlayerIds, employeeCodes: raffledEmployeeCodes };
+    } catch (error) {
+      console.error(`❌ Error fetching raffled players for sport ${sportId}:`, error);
+      // Return empty sets on error so raffle can still proceed
+      return { playerIds: new Set(), employeeCodes: new Set() };
+    }
+  };
+
   // Save raffle results to database
   const saveRaffleResults = async (sportId, results) => {
     try {
@@ -671,9 +777,33 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  // Initialize background music
+  useEffect(() => {
+    const playBackgroundMusic = async () => {
+      if (bgmRef.current) {
+        try {
+          bgmRef.current.volume = 0.3; // Set volume to 30%
+          await bgmRef.current.play();
+        } catch (error) {
+          console.log('Background music autoplay blocked by browser, will play on user interaction');
+        }
+      }
+    };
+
+    // Play background music when component mounts
+    playBackgroundMusic();
+  }, []);
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
+
+  const getTotalSelectedPlayersForSport = useCallback((sportId) => {
+    return Object.values(raffleResults).reduce((total, teamResults) => {
+      const sportPlayers = teamResults?.[sportId] || [];
+      return total + sportPlayers.length;
+    }, 0);
+  }, [raffleResults]);
 
 
   const tickerPlayers = useMemo(() => {
@@ -714,19 +844,21 @@ function App() {
       // Play start animation sound
       playSound(600, 0.2, 'sine', 0.5);
       
-      // Filter out already raffled players
-      const availablePlayers = playerPool.filter(player => {
-        const employeeCode = player.employeeCode?.trim() || '';
-        return !raffledEmployeeCodes.has(employeeCode);
-      });
-      
-      if (availablePlayers.length === 0) {
-        console.warn('⚠️ No available players after filtering raffled codes');
-        setIsRaffling(false);
-        return;
-      }
-      
-      if (phase === 'raffle') {
+      // Async function to handle raffle logic
+      const performRaffle = async () => {
+        // Filter out already raffled players
+        const availablePlayers = playerPool.filter(player => {
+          const employeeCode = player.employeeCode?.trim() || '';
+          return !raffledEmployeeCodes.has(employeeCode);
+        });
+        
+        if (availablePlayers.length === 0) {
+          console.warn('⚠️ No available players after filtering raffled codes');
+          setIsRaffling(false);
+          return;
+        }
+        
+        if (phase === 'raffle') {
         // All Sports Raffle - Assign each player to ONLY ONE sport based on highest priority
         const totalTeams = TEAM_CARDS.length; // 4 teams
         
@@ -979,6 +1111,13 @@ function App() {
         
         const sportKey = sportKeyMap[sportId] || sportId;
         
+        // Fetch already raffled players for THIS specific sport from database
+        const dbRaffledPlayers = await fetchRaffledPlayersForSport(sportId);
+        const dbRaffledPlayerIds = dbRaffledPlayers.playerIds;
+        const dbRaffledEmployeeCodes = dbRaffledPlayers.employeeCodes;
+        
+        console.log(`🔍 Checking database for sport ${sportId}: Found ${dbRaffledPlayerIds.size} already raffled player IDs and ${dbRaffledEmployeeCodes.size} employee codes`);
+        
         // Filter players who have registered interest in this sport AND haven't been assigned to THIS sport yet
         // Note: In sport-by-sport mode, players CAN be in multiple sports (unlike All Sports mode)
         // IMPORTANT: Use playerPool (not availablePlayers) because we don't want to exclude players
@@ -992,33 +1131,26 @@ function App() {
         
         const playersWithPreferences = playerPool
           .map(player => {
+            const primarySport = determinePrimarySport(player);
             const prefs = player.sportsPreferences || {};
             const sportPrefs = prefs[sportKey] || {};
             const priority = sportPrefs.priority || 0;
             const interest = sportPrefs.interest || 'Not specified';
             
             // Calculate score for this sport
-            let score = priority;
-            if (interest && typeof interest === 'string') {
-              const interestLower = interest.toLowerCase();
-              if (interestLower.includes('high') || interestLower.includes('very')) {
-                score += 2;
-              } else if (interestLower.includes('medium') || interestLower.includes('moderate')) {
-                score += 1;
-              } else if (interestLower.includes('low') || interestLower.includes('no')) {
-                score -= 1;
-              }
-            }
+            let score = priority + getInterestScore(interest);
             
             return {
               ...player,
+              primarySport,
               sportScore: score,
               sportPriority: priority,
               sportInterest: interest
             };
           })
-          // Only include players who have registered for this sport
-          // AND haven't been assigned to THIS specific sport yet (check raffleResults for this sport)
+          // Only include players whose PRIMARY sport is this sport
+          .filter(player => player.primarySport === sportId)
+          // AND haven't been assigned to THIS specific sport yet (check both database and in-memory raffleResults)
           .filter(player => {
             const hasPriority = player.sportPriority > 0;
             const hasInterest = player.sportInterest && 
@@ -1031,7 +1163,16 @@ function App() {
               return false; // Not registered for this sport
             }
             
-            // Check if player is already assigned to THIS sport (not other sports)
+            // Check if player is already assigned to THIS sport in database
+            const employeeCode = player.employeeCode?.trim() || '';
+            const alreadyInDb = dbRaffledPlayerIds.has(player.id) || dbRaffledEmployeeCodes.has(employeeCode);
+            
+            if (alreadyInDb) {
+              console.log(`🚫 Excluding player ${player.name} (ID: ${player.id}, Code: ${employeeCode}) - already raffled for ${sportId} in database`);
+              return false;
+            }
+            
+            // Check if player is already assigned to THIS sport in current session (in-memory)
             let alreadyInThisSport = false;
             Object.keys(raffleResults).forEach(teamId => {
               if (raffleResults[teamId][sportId]) {
@@ -1083,12 +1224,33 @@ function App() {
           }
           return Math.random() - 0.5; // Randomize within same score/priority
         });
+
+        // Deduplicate by employeeCode (or fallback to id) to avoid over-counting
+        const uniquePlayersMap = new Map();
+        playersWithPreferences.forEach(player => {
+          const key = (player.employeeCode?.trim() || '').toLowerCase() || `id-${player.id}`;
+          const existing = uniquePlayersMap.get(key);
+          if (!existing) {
+            uniquePlayersMap.set(key, player);
+          } else {
+            // Keep the higher-scoring record if duplicates exist
+            if (
+              player.sportScore > existing.sportScore ||
+              (player.sportScore === existing.sportScore && player.sportPriority > existing.sportPriority)
+            ) {
+              uniquePlayersMap.set(key, player);
+            }
+          }
+        });
+        const uniquePlayersForSport = Array.from(uniquePlayersMap.values());
+        const totalRegisteredForSport = uniquePlayersForSport.length;
+        console.log(`✅ ${selectedSport.name}: ${totalRegisteredForSport} unique PRIMARY-sport players (after dedupe by employeeCode/id)`);
         
         // Group players by their interest for this sport
         const playersByInterest = {};
         const playersWithoutInterest = [];
         
-        playersWithPreferences.forEach((player) => {
+        uniquePlayersForSport.forEach((player) => {
           const interest = player.sportInterest?.trim() || '';
           
           if (interest && 
@@ -1135,7 +1297,49 @@ function App() {
         
         // Use balanced distribution to ensure equal totals and equal interest distribution
         distributePlayersBalanced(playersByInterest, shuffledNoInterest, totalTeams, teamSportArrays, TEAM_CARDS, selectedSport.id);
-        
+
+        // Verification: ensure results only contain selected players and counts match
+        const selectedPlayerIds = new Set(uniquePlayersForSport.map(p => p.id));
+        const expectedCount = uniquePlayersForSport.length;
+
+        let totalPlayersInResults = 0;
+        let invalidPlayersFound = 0;
+        let duplicatePlayersFound = 0;
+        const seenPlayers = new Set();
+
+        TEAM_CARDS.forEach((team) => {
+          const assigned = teamSportArrays[team.id] || [];
+          totalPlayersInResults += assigned.length;
+
+          assigned.forEach(player => {
+            if (!selectedPlayerIds.has(player.id)) {
+              invalidPlayersFound++;
+              console.error(`🚫 INVALID PLAYER: ${player.name} (ID: ${player.id}) is not in the selected list for ${selectedSport.name}`);
+            }
+            if (seenPlayers.has(player.id)) {
+              duplicatePlayersFound++;
+              console.error(`🚫 DUPLICATE PLAYER: ${player.name} (ID: ${player.id}) appears multiple times for ${selectedSport.name}`);
+            }
+            seenPlayers.add(player.id);
+          });
+        });
+
+        console.log(`🎯 Sport-by-Sport ${selectedSport.name}: Selected ${expectedCount} players. Distributed ${totalPlayersInResults} players.`);
+
+        if (totalPlayersInResults !== expectedCount) {
+          console.warn(`⚠️ Count mismatch for ${selectedSport.name}: expected ${expectedCount}, got ${totalPlayersInResults}`);
+        }
+        if (invalidPlayersFound === 0 && duplicatePlayersFound === 0 && totalPlayersInResults === expectedCount) {
+          console.log(`✅ Verification passed for ${selectedSport.name}: counts match and all players are valid.`);
+        } else {
+          if (invalidPlayersFound > 0) {
+            console.warn(`⚠️ Found ${invalidPlayersFound} invalid players in ${selectedSport.name} results`);
+          }
+          if (duplicatePlayersFound > 0) {
+            console.warn(`⚠️ Found ${duplicatePlayersFound} duplicate player assignments in ${selectedSport.name} results`);
+          }
+        }
+
         // Debug logging for Relay
         if (selectedSport.id === 'relay') {
           console.log(`🏃‍♂️ Relay distribution results BEFORE shuffle:`);
@@ -1163,6 +1367,10 @@ function App() {
         setIsRaffling(false);
         setResultsSaved(false); // Reset saved status when new raffle starts
       }
+      };
+      
+      // Call the async function
+      performRaffle();
     }
   }, [phase, hasStartedRaffle, countdown, isRaffling, selectedSport, playerPool, raffledEmployeeCodes, TEAM_CARDS, raffleResults, revealedPlayers]);
 
@@ -2628,6 +2836,17 @@ function App() {
                       ? `Raffle Results - ${selectedSport.emoji} ${selectedSport.name}` 
                       : 'Raffle Results - All Teams & Sports'}
                   </h4>
+                    {phase === 'sport-raffle' && selectedSport && (
+                      <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.9em' }}>
+                        <strong>Registered players:</strong><br/>
+                        {SPORTS_CONFIG.map(sport => `${sport.emoji} ${sport.name}: ${registeredCountsBySport[sport.id] || 0}`).join(' ')}
+                      </div>
+                    )}
+                    {phase === 'sport-raffle' && selectedSport && (
+                      <small style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '0.5em', display: 'block' }}>
+                        Total selected players for {selectedSport.name}: {getTotalSelectedPlayersForSport(selectedSport.id)} players
+                      </small>
+                    )}
                   {phase === 'sport-raffle' && selectedSport && (
                     <div className="sport-navigation-buttons">
                       <button 
@@ -2999,6 +3218,15 @@ function App() {
           </>
         )}
       </main>
+
+      {/* Background Music */}
+      <audio
+        ref={bgmRef}
+        src={bgmAudio}
+        loop
+        preload="auto"
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
