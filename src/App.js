@@ -339,6 +339,7 @@ function App() {
   // Results structure: { teamId: { sportId: [players] } }
   const [raffleResults, setRaffleResults] = useState({});
   const [revealedPlayers, setRevealedPlayers] = useState({}); // Track which players are revealed: { teamId: { sportId: count } }
+  const [totalSelectedPlayersCount, setTotalSelectedPlayersCount] = useState(0);
   const [isRaffling, setIsRaffling] = useState(false);
   const [hasStartedRaffle, setHasStartedRaffle] = useState(false);
   const [tickerIndex, setTickerIndex] = useState(0);
@@ -659,22 +660,9 @@ function App() {
       const apiUrl = process.env.REACT_APP_API_URL || 
         (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
       
-      // Map team codes to team_id from teams table
-      const teamCodeToIdMap = {};
-      teams.forEach(team => {
-        teamCodeToIdMap[team.id] = team.teamId; // team.id is code, team.teamId is numeric ID
-      });
-      
-      // Convert results with team codes to results with team_id
-      const resultsWithTeamId = {};
-      Object.keys(results).forEach(teamCode => {
-        const teamId = teamCodeToIdMap[teamCode];
-        if (teamId) {
-          resultsWithTeamId[teamId] = results[teamCode];
-        } else {
-          console.warn(`⚠️ Team code ${teamCode} not found in teams, skipping...`);
-        }
-      });
+      // Results already contain team IDs as keys (1, 2, 3, 4)
+      // No additional mapping needed
+      const resultsWithTeamId = results;
       
       const response = await fetch(`${apiUrl}/raffle-results`, {
         method: 'POST',
@@ -817,13 +805,44 @@ function App() {
     }
   };
 
-  const getTotalSelectedPlayersForSport = useCallback((sportId) => {
-    return Object.values(raffleResults).reduce((total, teamResults) => {
-      const sportPlayers = teamResults?.[sportId] || [];
-      return total + sportPlayers.length;
-    }, 0);
-  }, [raffleResults]);
+  const getTotalSelectedPlayersForSport = useCallback(async (sportId) => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL ||
+        (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
 
+      const response = await fetch(`${apiUrl}/raffle-results?sportId=${encodeURIComponent(sportId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        console.error('Failed to fetch raffle results for sport count');
+        return 0;
+      }
+
+      const data = await response.json();
+      const results = data.results || [];
+      return results.length;
+    } catch (error) {
+      console.error('Error fetching sport player count:', error);
+      return 0;
+    }
+  }, []);
+
+  // Update total selected players count when sport changes
+  useEffect(() => {
+    const updateCount = async () => {
+      if (selectedSport) {
+        const count = await getTotalSelectedPlayersForSport(selectedSport.id);
+        setTotalSelectedPlayersCount(count);
+      } else {
+        setTotalSelectedPlayersCount(0);
+      }
+    };
+    updateCount();
+  }, [selectedSport, getTotalSelectedPlayersForSport]);
 
   const tickerPlayers = useMemo(() => {
     const windowSize = 5;
@@ -865,14 +884,11 @@ function App() {
       
       // Async function to handle raffle logic
       const performRaffle = async () => {
-        // Filter out already raffled players
-        const availablePlayers = playerPool.filter(player => {
-          const employeeCode = player.employeeCode?.trim() || '';
-          return !raffledEmployeeCodes.has(employeeCode);
-        });
-        
+        // Simplified: Use all players without filtering
+        const availablePlayers = playerPool;
+
         if (availablePlayers.length === 0) {
-          console.warn('⚠️ No available players after filtering raffled codes');
+          console.warn('⚠️ No players available');
           setIsRaffling(false);
           return;
         }
@@ -1130,17 +1146,10 @@ function App() {
         
         const sportKey = sportKeyMap[sportId] || sportId;
         
-        // Fetch already raffled players for THIS specific sport from database
-        const dbRaffledPlayers = await fetchRaffledPlayersForSport(sportId);
-        const dbRaffledPlayerIds = dbRaffledPlayers.playerIds;
-        const dbRaffledEmployeeCodes = dbRaffledPlayers.employeeCodes;
+        // Simplified: No database checks for previous raffles
         
-        console.log(`🔍 Checking database for sport ${sportId}: Found ${dbRaffledPlayerIds.size} already raffled player IDs and ${dbRaffledEmployeeCodes.size} employee codes`);
-        
-        // Filter players who have registered interest in this sport AND haven't been assigned to THIS sport yet
-        // Note: In sport-by-sport mode, players CAN be in multiple sports (unlike All Sports mode)
-        // IMPORTANT: Use playerPool (not availablePlayers) because we don't want to exclude players
-        // who were raffled in OTHER sports - we only exclude if they're already in THIS sport
+        // Filter players who have registered interest in this sport
+        // Note: Simplified - no exclusion based on previous raffles
         
         // Debug logging for Relay
         if (selectedSport.id === 'relay') {
@@ -1182,14 +1191,7 @@ function App() {
               return false; // Not registered for this sport
             }
             
-            // Check if player is already assigned to THIS sport in database
-            const employeeCode = player.employeeCode?.trim() || '';
-            const alreadyInDb = dbRaffledPlayerIds.has(player.id) || dbRaffledEmployeeCodes.has(employeeCode);
-            
-            if (alreadyInDb) {
-              console.log(`🚫 Excluding player ${player.name} (ID: ${player.id}, Code: ${employeeCode}) - already raffled for ${sportId} in database`);
-              return false;
-            }
+            // Simplified: No database checks for previous raffles - allow re-raffling
             
             // Check if player is already assigned to THIS sport in current session (in-memory)
             let alreadyInThisSport = false;
@@ -1720,26 +1722,13 @@ function App() {
     // Initialize and resume audio context before playing sounds
     await resumeAudioContext();
     
-    // Fetch already raffled employee codes
-    const raffledCodes = await fetchRaffledEmployeeCodes();
-    setRaffledEmployeeCodes(raffledCodes);
-    
-    // Filter out players who are already in raffle_results
-    const availablePlayers = playerPool.filter(player => {
-      const employeeCode = player.employeeCode?.trim() || '';
-      return !raffledCodes.has(employeeCode);
-    });
-    
-    if (availablePlayers.length === 0) {
-      alert('⚠️ No available players found. All players have already been raffled.');
-      return;
-    }
-    
-    const excludedCount = playerPool.length - availablePlayers.length;
-    if (excludedCount > 0) {
-      console.log(`🚫 Excluded ${excludedCount} already raffled players. ${availablePlayers.length} players available for raffle.`);
-    }
-    
+    // Simplified: No raffle history checking - just use all players
+    const availablePlayers = playerPool;
+    console.log(`🎲 Simple shuffle: using all ${availablePlayers.length} players without filtering`);
+
+    // Set empty raffled codes since we're not filtering
+    setRaffledEmployeeCodes(new Set());
+
     playRaffleStartSound();
     setHasStartedRaffle(true);
     setCountdown(5); // 5 seconds countdown
@@ -2863,7 +2852,7 @@ function App() {
                     )}
                     {phase === 'sport-raffle' && selectedSport && (
                       <small style={{ fontSize: '0.85em', opacity: 0.8, marginTop: '0.5em', display: 'block' }}>
-                        Total selected players for {selectedSport.name}: {getTotalSelectedPlayersForSport(selectedSport.id)} players
+                        Total selected players for {selectedSport.name}: {totalSelectedPlayersCount} players
                       </small>
                     )}
                   {phase === 'sport-raffle' && selectedSport && (
